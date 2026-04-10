@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/ccusage"
+mkdir -p "$STATE_DIR"
+
+# Build usage summary for clipboard
+build_summary() {
+    if [[ ! -f "$STATE_DIR/usage.json" ]]; then
+        echo "No usage data available"
+        return
+    fi
+    local five_pct seven_pct
+    five_pct=$(jq -r '.five_hour.utilization // "N/A"' "$STATE_DIR/usage.json" 2>/dev/null)
+    seven_pct=$(jq -r '.seven_day.utilization // "N/A"' "$STATE_DIR/usage.json" 2>/dev/null)
+    five_reset=$(jq -r '.five_hour.resets_at // "N/A"' "$STATE_DIR/usage.json" 2>/dev/null)
+    seven_reset=$(jq -r '.seven_day.resets_at // "N/A"' "$STATE_DIR/usage.json" 2>/dev/null)
+    printf '5-hour: %s%% (resets: %s)\nWeekly: %s%% (resets: %s)' \
+        "${five_pct%.*}" "$five_reset" "${seven_pct%.*}" "$seven_reset"
+}
+
+# Menu
+choice=$(printf '%s\n' \
+    "↻  Refresh Now" \
+    "  Copy Usage" \
+    "  Raw Data" \
+    | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 300 -p "Claude Usage" 2>/dev/null
+) || exit 0
+
+case "$choice" in
+    *"Refresh"*)
+        touch "$STATE_DIR/force_refresh"
+        notify-send -t 2000 -a "Claude Usage" "Refreshing usage data..."
+        ;;
+    *"Copy"*)
+        summary=$(build_summary)
+        printf '%s' "$summary" | wl-copy 2>/dev/null
+        notify-send -t 2000 -a "Claude Usage" "Copied to clipboard"
+        ;;
+    *"Raw"*)
+        if [[ -f "$STATE_DIR/usage.json" ]]; then
+            jq . "$STATE_DIR/usage.json" | wl-copy 2>/dev/null
+            notify-send -t 2000 -a "Claude Usage" "Raw JSON copied to clipboard"
+        else
+            notify-send -t 2000 -a "Claude Usage" "No data available yet"
+        fi
+        ;;
+esac
