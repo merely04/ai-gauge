@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_DIR="$HOME/.config/ccusage"
+CONFIG_FILE="$CONFIG_DIR/config.json"
+
+mkdir -p "$CONFIG_DIR"
+
+read_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        cat "$CONFIG_FILE"
+    else
+        echo '{"tokenSource":"claude-code","plan":"unknown"}'
+    fi
+}
+
+get_field() {
+    read_config | jq -r ".$1 // empty"
+}
+
+set_field() {
+    local key="$1" value="$2"
+    local config
+    config=$(read_config)
+    echo "$config" | jq --arg k "$key" --arg v "$value" '.[$k] = $v' > "$CONFIG_FILE"
+}
+
+restart_server() {
+    systemctl --user restart ccusage-server 2>/dev/null || true
+}
+
+# CLI mode
+if [[ "${1:-}" == "get" ]]; then
+    if [[ -n "${2:-}" ]]; then
+        get_field "$2"
+    else
+        read_config | jq .
+    fi
+    exit 0
+fi
+
+if [[ "${1:-}" == "set" ]]; then
+    if [[ -z "${2:-}" || -z "${3:-}" ]]; then
+        echo "Usage: ccusage-config set <key> <value>" >&2
+        exit 1
+    fi
+    set_field "$2" "$3"
+    echo "Set $2 = $3"
+    restart_server
+    exit 0
+fi
+
+# Interactive mode (walker UI)
+current_source=$(get_field tokenSource)
+current_plan=$(get_field plan)
+
+choice=$(printf '%s\n' \
+    "🔑  Token Source: ${current_source:-claude-code}" \
+    "📋  Plan: ${current_plan:-unknown}" \
+    | omarchy-launch-walker --dmenu --width 260 --minheight 1 --maxheight 200 -p "Settings" 2>/dev/null
+) || exit 0
+
+case "$choice" in
+    *"Token Source"*)
+        new_source=$(printf '%s\n' "claude-code" "opencode" \
+            | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 150 -p "Token Source" 2>/dev/null
+        ) || exit 0
+        set_field "tokenSource" "$new_source"
+        notify-send -t 2000 -a "Claude Usage" "Token source: $new_source"
+        restart_server
+        ;;
+    *"Plan"*)
+        new_plan=$(printf '%s\n' "max" "pro" "team" "enterprise" "unknown" \
+            | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null
+        ) || exit 0
+        set_field "plan" "$new_plan"
+        notify-send -t 2000 -a "Claude Usage" "Plan: $new_plan"
+        restart_server
+        ;;
+esac
