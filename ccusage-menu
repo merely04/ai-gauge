@@ -24,12 +24,13 @@ choice=$(printf '%s\n' \
     "↻  Refresh Now" \
     "  Copy Usage" \
     "  Raw Data" \
+    "⚙  Settings" \
     | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 300 -p "Claude Usage" 2>/dev/null
 ) || exit 0
 
 case "$choice" in
     *"Refresh"*)
-        touch "$STATE_DIR/force_refresh"
+        bun -e 'const ws = new WebSocket("ws://localhost:19876"); ws.onopen = () => { ws.send(JSON.stringify({command:"refresh"})); ws.close(); };'
         notify-send -t 2000 -a "Claude Usage" "Refreshing usage data..."
         ;;
     *"Copy"*)
@@ -44,5 +45,8 @@ case "$choice" in
         else
             notify-send -t 2000 -a "Claude Usage" "No data available yet"
         fi
+        ;;
+    *"Settings"*)
+        ccusage-config
         ;;
 esac
