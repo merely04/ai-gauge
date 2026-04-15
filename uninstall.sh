@@ -3,9 +3,16 @@ set -euo pipefail
 
 WAYBAR_CONFIG="$HOME/.config/waybar/config.jsonc"
 WAYBAR_STYLE="$HOME/.config/waybar/style.css"
-SYMLINKS=(ccusage-waybar ccusage-menu)
+SYMLINKS=(ccusage-waybar ccusage-menu ccusage-server ccusage-config)
 
 echo "Uninstalling cc-usage waybar module..."
+
+# Stop and disable systemd service first
+systemctl --user stop ccusage-server 2>/dev/null || true
+systemctl --user disable ccusage-server 2>/dev/null || true
+rm -f "$HOME/.config/systemd/user/ccusage-server.service"
+systemctl --user daemon-reload 2>/dev/null || true
+echo "  Stopped and removed ccusage-server service"
 
 for name in "${SYMLINKS[@]}"; do
     rm -f "$HOME/.local/bin/$name"
@@ -63,6 +70,16 @@ fi
 
 rm -rf "${XDG_RUNTIME_DIR:-/tmp}/ccusage"
 echo "  Cleaned runtime state"
+
+rm -rf "$HOME/.config/ccusage"
+echo "  Removed config"
+
+STREAMDOCK_PLUGINS="$HOME/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins"
+PLUGIN_DST="$STREAMDOCK_PLUGINS/com.ccusage.streamdock.sdPlugin"
+if [[ -d "$PLUGIN_DST" ]]; then
+    rm -rf "$PLUGIN_DST"
+    echo "  Removed StreamDock plugin"
+fi
 
 if command -v omarchy-restart-waybar &>/dev/null; then
     omarchy-restart-waybar
