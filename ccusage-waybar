@@ -1,226 +1,139 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env bun
 
-CREDS_FILE="$HOME/.claude/.credentials.json"
-STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/ccusage"
-POLL_INTERVAL=60
+const WS_URL = 'ws://localhost:19876';
+const RECONNECT_DELAY = 5_000;
 
-mkdir -p "$STATE_DIR"
+function getRemainingSeconds(resetsAt) {
+  if (!resetsAt || resetsAt === 'null') return null;
 
-# --- helpers ---
+  const resetMs = new Date(resetsAt).getTime();
+  if (!Number.isFinite(resetMs)) return 0;
 
-get_token() {
-    jq -r '.claudeAiOauth.accessToken // empty' "$CREDS_FILE" 2>/dev/null
+  return Math.floor((resetMs - Date.now()) / 1000);
 }
 
-is_token_valid() {
-    local expires_ms
-    expires_ms=$(jq -r '.claudeAiOauth.expiresAt // empty' "$CREDS_FILE" 2>/dev/null)
-    [[ -z "$expires_ms" ]] && return 1
-    local now_ms=$(( $(date +%s) * 1000 ))
-    (( expires_ms > now_ms ))
+function formatDuration(resetsAt) {
+  const seconds = getRemainingSeconds(resetsAt);
+  if (seconds == null) return '';
+  if (seconds <= 0) return 'now';
+
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+
+  if (hours > 0) {
+    return `${hours}h${String(mins).padStart(2, '0')}m`;
+  }
+
+  return `${mins}m`;
 }
 
-fetch_usage() {
-    local token
-    token=$(get_token)
-    [[ -z "$token" ]] && return 1
+function formatDurationLong(resetsAt) {
+  const seconds = getRemainingSeconds(resetsAt);
+  if (seconds == null) return '';
+  if (seconds <= 0) return 'now';
 
-    local tmp="$STATE_DIR/usage.tmp"
-    local cc_version
-    cc_version=$(claude --version 2>/dev/null | head -1 | grep -oP '[\d.]+' || echo "2.1.100")
-    if /usr/bin/curl -s --max-time 10 \
-        "https://api.anthropic.com/api/oauth/usage" \
-        -H "Authorization: Bearer $token" \
-        -H "anthropic-beta: oauth-2025-04-20" \
-        -H "User-Agent: claude-code/$cc_version" \
-        -o "$tmp" 2>/dev/null; then
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
 
-        # Only accept valid non-error responses
-        if jq -e '.five_hour' "$tmp" &>/dev/null; then
-            mv -f "$tmp" "$STATE_DIR/usage.json"
-            date +%s > "$STATE_DIR/last_fetch"
-            return 0
-        fi
-    fi
-    rm -f "$tmp"
-    return 1
+  if (days > 0) {
+    return `${days}d ${hours}h ${mins}m`;
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${mins}m`;
+  }
+
+  return `${mins}m`;
 }
 
-format_duration() {
-    local seconds=$1
-    if (( seconds <= 0 )); then
-        echo "now"
-        return
-    fi
-    local hours=$(( seconds / 3600 ))
-    local mins=$(( (seconds % 3600) / 60 ))
-    if (( hours > 0 )); then
-        printf '%dh%02dm' "$hours" "$mins"
-    else
-        printf '%dm' "$mins"
-    fi
+function render(data) {
+  const fivePct = Number(data?.five_hour?.utilization ?? 0);
+  const sevenPct = Number(data?.seven_day?.utilization ?? 0);
+  const fiveInt = Math.round(Number.isFinite(fivePct) ? fivePct : 0);
+  const sevenInt = Math.round(Number.isFinite(sevenPct) ? sevenPct : 0);
+
+  const fiveRemaining = formatDuration(data?.five_hour?.resets_at);
+  const fiveRemainingLong = formatDurationLong(data?.five_hour?.resets_at);
+  const sevenRemainingLong = formatDurationLong(data?.seven_day?.resets_at);
+
+  let cssClass = 'normal';
+  if (fiveInt >= 80) {
+    cssClass = 'critical';
+  } else if (fiveInt >= 50) {
+    cssClass = 'warning';
+  }
+
+  let text = `✦ ${fiveInt}%`;
+  if (fiveRemaining) text += ` ${fiveRemaining}`;
+  text += ` · ${sevenInt}%w`;
+
+  let tooltip = 'Claude Code Usage';
+  tooltip += '\n───────────────';
+  tooltip += `\n5-hour:  ${fiveInt}%`;
+  if (fiveRemainingLong) tooltip += `  (resets in ${fiveRemainingLong})`;
+  tooltip += `\nWeekly:  ${sevenInt}%`;
+  if (sevenRemainingLong) tooltip += `  (resets in ${sevenRemainingLong})`;
+
+  const sonnetPct = data?.seven_day_sonnet?.utilization;
+  if (sonnetPct != null && sonnetPct !== 'null') {
+    const sonnetNum = Number(sonnetPct);
+    const sonnetInt = Math.round(Number.isFinite(sonnetNum) ? sonnetNum : 0);
+    const sonnetRemainingLong = formatDurationLong(data?.seven_day_sonnet?.resets_at);
+
+    tooltip += `\nSonnet:  ${sonnetInt}%`;
+    if (sonnetRemainingLong) tooltip += `  (resets in ${sonnetRemainingLong})`;
+  }
+
+  const extraEnabled = data?.extra_usage?.is_enabled;
+  if (extraEnabled === true || extraEnabled === 'true') {
+    const extraPct = Number(data?.extra_usage?.utilization ?? 0);
+    const extraUsed = Number(data?.extra_usage?.used_credits ?? 0);
+    const extraLimit = Number(data?.extra_usage?.monthly_limit ?? 0);
+    const extraInt = Math.round(Number.isFinite(extraPct) ? extraPct : 0);
+    const extraUsedDollars = ((Number.isFinite(extraUsed) ? extraUsed : 0) / 100).toFixed(2);
+    const extraLimitDollars = Math.round((Number.isFinite(extraLimit) ? extraLimit : 0) / 100);
+
+    tooltip += '\n───────────────';
+    tooltip += `\nExtra: $${extraUsedDollars}/$${extraLimitDollars} (${extraInt}%)`;
+  }
+
+  const plan = data?.meta?.plan ?? 'unknown';
+  tooltip += '\n───────────────';
+  tooltip += `\nPlan: ${plan}`;
+
+  process.stdout.write(JSON.stringify({ text, class: cssClass, tooltip }) + '\n');
 }
 
-format_duration_long() {
-    local seconds=$1
-    if (( seconds <= 0 )); then
-        echo "now"
-        return
-    fi
-    local days=$(( seconds / 86400 ))
-    local hours=$(( (seconds % 86400) / 3600 ))
-    local mins=$(( (seconds % 3600) / 60 ))
-    if (( days > 0 )); then
-        printf '%dd %dh %dm' "$days" "$hours" "$mins"
-    elif (( hours > 0 )); then
-        printf '%dh %dm' "$hours" "$mins"
-    else
-        printf '%dm' "$mins"
-    fi
+function printWaiting() {
+  process.stdout.write(JSON.stringify({
+    text: '✦ ···',
+    class: 'waiting',
+    tooltip: 'Connecting to ccusage-server...',
+  }) + '\n');
 }
 
-read_json() {
-    jq -r "$1" "$STATE_DIR/usage.json" 2>/dev/null
+function connect() {
+  let closed = false;
+  const ws = new WebSocket(WS_URL);
+
+  ws.onmessage = (event) => {
+    try {
+      const payload = typeof event.data === 'string' ? event.data : String(event.data);
+      render(JSON.parse(payload));
+    } catch {}
+  };
+
+  ws.onerror = () => {};
+
+  ws.onclose = () => {
+    if (closed) return;
+    closed = true;
+    printWaiting();
+    setTimeout(connect, RECONNECT_DELAY);
+  };
 }
 
-# --- main loop ---
-
-last_fetch=0
-current_interval=$POLL_INTERVAL
-
-while true; do
-    now=$(date +%s)
-
-    # No credentials file at all
-    if [[ ! -f "$CREDS_FILE" ]]; then
-        printf '{"text":"✦ ···","class":"expired","tooltip":"No credentials found\\nRun claude to authenticate"}\n'
-        sleep 5
-        continue
-    fi
-
-    # Check token validity
-    if ! is_token_valid; then
-        printf '{"text":"✦ ···","class":"expired","tooltip":"Token expired\\nWaiting for Claude CLI to refresh..."}\n'
-        current_interval=$POLL_INTERVAL
-        sleep 5
-        continue
-    fi
-
-    # Force refresh via menu trigger
-    if [[ -f "$STATE_DIR/force_refresh" ]]; then
-        rm -f "$STATE_DIR/force_refresh"
-        last_fetch=0
-        current_interval=$POLL_INTERVAL
-    fi
-
-    # Fetch usage data periodically
-    if (( now - last_fetch >= current_interval )); then
-        if fetch_usage; then
-            current_interval=$POLL_INTERVAL
-        else
-            current_interval=300
-        fi
-        last_fetch=$now
-    fi
-
-    # No cached data yet
-    if [[ ! -f "$STATE_DIR/usage.json" ]]; then
-        printf '{"text":"✦ ···","class":"waiting","tooltip":"Fetching usage data..."}\n'
-        sleep 1
-        continue
-    fi
-
-    # Parse cached data
-    five_pct=$(read_json '.five_hour.utilization // 0')
-    five_reset=$(read_json '.five_hour.resets_at // empty')
-    seven_pct=$(read_json '.seven_day.utilization // 0')
-    seven_reset=$(read_json '.seven_day.resets_at // empty')
-
-    # 5h reset countdown
-    five_remaining=""
-    five_remaining_long=""
-    if [[ -n "$five_reset" && "$five_reset" != "null" ]]; then
-        reset_epoch=$(date -d "$five_reset" +%s 2>/dev/null || echo "0")
-        remaining=$(( reset_epoch - now ))
-        five_remaining=$(format_duration "$remaining")
-        five_remaining_long=$(format_duration_long "$remaining")
-    fi
-
-    # 7d reset countdown
-    seven_remaining_long=""
-    if [[ -n "$seven_reset" && "$seven_reset" != "null" ]]; then
-        reset_epoch=$(date -d "$seven_reset" +%s 2>/dev/null || echo "0")
-        remaining=$(( reset_epoch - now ))
-        seven_remaining_long=$(format_duration_long "$remaining")
-    fi
-
-    # Integer percentages
-    five_int=$(printf '%.0f' "$five_pct" 2>/dev/null || echo "0")
-    seven_int=$(printf '%.0f' "$seven_pct" 2>/dev/null || echo "0")
-
-    # CSS class based on 5h utilization
-    if (( five_int >= 80 )); then
-        css_class="critical"
-        if [[ ! -f "$STATE_DIR/alerted_80" ]]; then
-            notify-send -u critical -t 10000 -a "Claude Code" "5-hour limit at ${five_int}%" "Resets in ${five_remaining:-?}"
-            touch "$STATE_DIR/alerted_80"
-        fi
-    elif (( five_int >= 50 )); then
-        css_class="warning"
-        rm -f "$STATE_DIR/alerted_80"
-    else
-        css_class="normal"
-        rm -f "$STATE_DIR/alerted_80"
-    fi
-
-    # Bar text: ✦ 42% 2h31m
-    display_text="✦ ${five_int}%"
-    [[ -n "$five_remaining" ]] && display_text+=" ${five_remaining}"
-    display_text+=" · ${seven_int}%w"
-
-    # Tooltip
-    tooltip="Claude Code Usage"
-    tooltip+="\\n───────────────"
-    tooltip+="\\n5-hour:  ${five_int}%"
-    [[ -n "$five_remaining_long" ]] && tooltip+="  (resets in ${five_remaining_long})"
-    tooltip+="\\nWeekly:  ${seven_int}%"
-    [[ -n "$seven_remaining_long" ]] && tooltip+="  (resets in ${seven_remaining_long})"
-
-    sonnet_pct=$(read_json '.seven_day_sonnet.utilization // empty')
-    if [[ -n "$sonnet_pct" && "$sonnet_pct" != "null" ]]; then
-        sonnet_int=$(printf '%.0f' "$sonnet_pct" 2>/dev/null || echo "0")
-        sonnet_reset=$(read_json '.seven_day_sonnet.resets_at // empty')
-        sonnet_remaining_long=""
-        if [[ -n "$sonnet_reset" && "$sonnet_reset" != "null" ]]; then
-            reset_epoch=$(date -d "$sonnet_reset" +%s 2>/dev/null || echo "0")
-            remaining=$(( reset_epoch - now ))
-            sonnet_remaining_long=$(format_duration_long "$remaining")
-        fi
-        tooltip+="\\nSonnet:  ${sonnet_int}%"
-        [[ -n "$sonnet_remaining_long" ]] && tooltip+="  (resets in ${sonnet_remaining_long})"
-    fi
-
-    # Extra usage
-    extra_enabled=$(read_json '.extra_usage.is_enabled // false')
-    if [[ "$extra_enabled" == "true" ]]; then
-        extra_pct=$(read_json '.extra_usage.utilization // 0')
-        extra_used=$(read_json '.extra_usage.used_credits // 0')
-        extra_limit=$(read_json '.extra_usage.monthly_limit // 0')
-        extra_int=$(printf '%.0f' "$extra_pct" 2>/dev/null || echo "0")
-        extra_used_dollars=$(awk "BEGIN {printf \"%.2f\", $extra_used / 100}")
-        extra_limit_dollars=$(awk "BEGIN {printf \"%.0f\", $extra_limit / 100}")
-        tooltip+="\\n───────────────"
-        tooltip+="\\nExtra: \$${extra_used_dollars}/\$${extra_limit_dollars} (${extra_int}%)"
-    fi
-
-    # Subscription info
-    plan=$(jq -r '.claudeAiOauth.subscriptionType // "unknown"' "$CREDS_FILE" 2>/dev/null)
-    tooltip+="\\n───────────────"
-    tooltip+="\\nPlan: ${plan}"
-
-    printf '{"text":"%s","class":"%s","tooltip":"%s"}\n' \
-        "$display_text" "$css_class" "$tooltip"
-
-    sleep 60
-done
+printWaiting();
+connect();
+setInterval(() => {}, 60_000);
