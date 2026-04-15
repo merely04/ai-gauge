@@ -1,0 +1,48 @@
+{
+  "name": "ai-gauge",
+  "version": "1.0.0",
+  "description": "Real-time AI coding assistant usage monitor for Waybar — Claude Code, OpenCode, rate limits, alerts, StreamDock plugin",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/merely04/ai-gauge.git"
+  },
+  "author": "merely04",
+  "bin": {
+    "ai-gauge": "bin/ai-gauge",
+    "ai-gauge-server": "bin/ai-gauge-server",
+    "ai-gauge-waybar": "bin/ai-gauge-waybar",
+    "ai-gauge-menu": "bin/ai-gauge-menu",
+    "ai-gauge-config": "bin/ai-gauge-config"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "README.md",
+    "docs/"
+  ],
+  "keywords": [
+    "waybar",
+    "waybar-module",
+    "claude-code",
+    "claude",
+    "anthropic",
+    "opencode",
+    "linux",
+    "hyprland",
+    "sway",
+    "wayland",
+    "monitoring",
+    "usage-tracking",
+    "developer-tools",
+    "stream-deck",
+    "status-bar",
+    "ai-gauge",
+    "rate-limiting",
+    "ai-monitoring"
+  ],
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "os": ["linux"]
+}

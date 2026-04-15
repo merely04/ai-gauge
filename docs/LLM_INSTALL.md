@@ -15,18 +15,18 @@ Before proceeding, verify:
 ## Install
 
 ```bash
-git clone https://github.com/merely04/ai-gauge.git ~/dev/ai-gauge && bash ~/dev/ai-gauge/install.sh
+bun add -g ai-gauge
+ai-gauge setup
 ```
 
-The install script:
-1. Symlinks `ai-gauge-waybar`, `ai-gauge-menu`, `ai-gauge-server`, `ai-gauge-config` to `~/.local/bin/`
-2. Resolves `bun` path and installs `ai-gauge-server.service` as a systemd user service
-3. Starts the WebSocket server (`ws://localhost:19876`)
-4. Installs StreamDock plugin if Wine + StreamDock are present
-5. Creates default config at `~/.config/ai-gauge/config.json`
-6. Adds `"custom/ai-gauge"` to `modules-center` in `~/.config/waybar/config.jsonc`
-7. Adds CSS styling to `~/.config/waybar/style.css`
-8. Restarts waybar
+The setup command:
+1. Resolves `bun` path and installs `ai-gauge-server` as a systemd user service
+2. Starts the WebSocket server (`ws://localhost:19876`)
+3. Installs StreamDock plugin if Wine + StreamDock are present
+4. Creates default config at `~/.config/ai-gauge/config.json`
+5. Adds `"custom/ai-gauge"` to `modules-center` in `~/.config/waybar/config.jsonc`
+6. Adds CSS styling to `~/.config/waybar/style.css`
+7. Restarts waybar
 
 If the user's waybar config does not have `modules-center` or uses a different module layout, you may need to manually adjust placement in `config.jsonc` after install.
 
@@ -49,10 +49,11 @@ The server restarts automatically after `ai-gauge-config set`.
 ## Uninstall
 
 ```bash
-bash ~/dev/ai-gauge/uninstall.sh
+ai-gauge uninstall
+bun remove -g ai-gauge
 ```
 
-Stops the service, removes symlinks, cleans config/CSS, removes runtime state and config directory. Both install and uninstall are idempotent.
+Stops the service, cleans config/CSS, removes runtime state and config directory. Both setup and uninstall are idempotent.
 
 ## Verify
 
@@ -69,7 +70,7 @@ If it stays `✦ ···` for more than 2 minutes, check:
 
 Common issues an LLM agent might encounter:
 
-- **`bun: command not found`** — install bun: `curl -fsSL https://bun.sh/install | bash`, then re-run install.sh
+- **`bun: command not found`** — install bun: `curl -fsSL https://bun.sh/install | bash`, then re-run `ai-gauge setup`
 - **`jq: command not found`** — install jq: `sudo pacman -S jq` (Arch) or `sudo apt install jq` (Debian/Ubuntu)
 - **Service starts but no data** — token is expired. Check `journalctl --user -u ai-gauge-server -n 5` for "token expired". The source CLI needs to refresh it (open Claude Code or OpenCode)
 - **Waybar shows `✦ ···` permanently** — server has no data to send. Check service status and token validity

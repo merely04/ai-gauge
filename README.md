@@ -27,11 +27,16 @@ https://raw.githubusercontent.com/merely04/ai-gauge/master/docs/LLM_INSTALL.md
 ## Install
 
 ```bash
-git clone https://github.com/merely04/ai-gauge.git ~/dev/ai-gauge
-bash ~/dev/ai-gauge/install.sh
+bun add -g ai-gauge
+ai-gauge setup
 ```
 
-To uninstall: `bash ~/dev/ai-gauge/uninstall.sh`
+To uninstall:
+
+```bash
+ai-gauge uninstall
+bun remove -g ai-gauge
+```
 
 Requires [Bun](https://bun.sh) and a Linux desktop with Waybar (Hyprland, Sway, or any wlroots compositor).
 
@@ -97,7 +102,7 @@ The plugin shows usage stats on a physical key of the Fifine AmpliGame D6 stream
 
 **Requirements**: Fifine D6 + StreamDock app running via Wine on Linux.
 
-**Setup**: `install.sh` copies the plugin automatically. Open StreamDock → find **AI Gauge** in the action list → drag it onto a key.
+**Setup**: `ai-gauge setup` copies the plugin automatically. Open StreamDock → find **AI Gauge** in the action list → drag it onto a key.
 
 The button connects to `ai-gauge-server` via WebSocket and updates in real time. If the server is not running, the button shows `--`.
 
@@ -113,13 +118,12 @@ The server writes `usage.json` atomically to `$XDG_RUNTIME_DIR/ai-gauge/` so oth
 
 | File | Purpose |
 |------|---------|
-| `ai-gauge-server` | WebSocket server — fetches Anthropic API, broadcasts to clients (port 19876) |
-| `ai-gauge-server.service` | systemd user service unit |
-| `ai-gauge-waybar` | Thin WS client — renders waybar JSON from server data |
-| `ai-gauge-menu` | Click menu — refresh, copy, settings |
-| `ai-gauge-config` | Settings CLI/UI — token source, plan name |
-| `streamdock-plugin/` | StreamDock (Fifine D6) button plugin |
-| `install.sh` | Installs service + symlinks + plugin, patches waybar config + CSS |
-| `uninstall.sh` | Removes everything cleanly |
+| `bin/ai-gauge` | Main CLI — setup, uninstall, status |
+| `bin/ai-gauge-server` | WebSocket server — fetches Anthropic API, broadcasts to clients (port 19876) |
+| `bin/ai-gauge-waybar` | Thin WS client — renders waybar JSON from server data |
+| `bin/ai-gauge-menu` | Click menu — refresh, copy, settings |
+| `bin/ai-gauge-config` | Settings CLI/UI — token source, plan name |
+| `lib/ai-gauge-server.service` | systemd user service unit template |
+| `lib/streamdock-plugin/` | StreamDock (Fifine D6) button plugin |
 
-Both install and uninstall are idempotent.
+Both setup and uninstall are idempotent.

@@ -1,0 +1,294 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve package directory (follows symlinks from global bin)
+SELF="$(readlink -f "$0")"
+BIN_DIR="$(dirname "$SELF")"
+PACKAGE_DIR="$(dirname "$BIN_DIR")"
+LIB_DIR="$PACKAGE_DIR/lib"
+
+WAYBAR_CONFIG="$HOME/.config/waybar/config.jsonc"
+WAYBAR_STYLE="$HOME/.config/waybar/style.css"
+
+usage() {
+    echo "ai-gauge — AI coding assistant usage monitor"
+    echo ""
+    echo "Usage: ai-gauge <command>"
+    echo ""
+    echo "Commands:"
+    echo "  setup       Install systemd service, patch waybar config + CSS"
+    echo "  uninstall   Remove service, waybar config, CSS, runtime state"
+    echo "  status      Show service status"
+    echo "  version     Show version"
+    echo ""
+    echo "Configuration:"
+    echo "  ai-gauge-config get              Show current config"
+    echo "  ai-gauge-config set <key> <val>  Set config value"
+}
+
+cmd_version() {
+    local pkg="$PACKAGE_DIR/package.json"
+    if [[ -f "$pkg" ]] && command -v jq &>/dev/null; then
+        jq -r '.version' "$pkg"
+    else
+        echo "unknown"
+    fi
+}
+
+cmd_status() {
+    systemctl --user status ai-gauge-server --no-pager 2>&1 || true
+}
+
+cmd_setup() {
+    echo "Setting up ai-gauge..."
+
+    # Resolve bun path
+    local BUN_PATH
+    BUN_PATH=$(which bun 2>/dev/null || true)
+    if [[ -z "$BUN_PATH" ]]; then
+        echo "Error: bun not found in PATH. Install bun first: https://bun.sh"
+        exit 1
+    fi
+    echo "  Found bun at $BUN_PATH"
+
+    # Resolve ai-gauge-server path (it's in PATH after npm install)
+    local SERVER_PATH
+    SERVER_PATH=$(which ai-gauge-server 2>/dev/null || true)
+    if [[ -z "$SERVER_PATH" ]]; then
+        echo "Error: ai-gauge-server not found in PATH"
+        exit 1
+    fi
+    SERVER_PATH="$(readlink -f "$SERVER_PATH")"
+    echo "  Found ai-gauge-server at $SERVER_PATH"
+
+    # Create default config if missing
+    local CONFIG_DIR="$HOME/.config/ai-gauge"
+    local CONFIG_FILE="$CONFIG_DIR/config.json"
+    mkdir -p "$CONFIG_DIR"
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo '{"tokenSource": "claude-code", "plan": "unknown"}' > "$CONFIG_FILE"
+        echo "  Created default config → $CONFIG_FILE"
+    else
+        echo "  Config already exists (skipped)"
+    fi
+
+    # Install systemd service
+    local SYSTEMD_DIR="$HOME/.config/systemd/user"
+    mkdir -p "$SYSTEMD_DIR"
+    local SERVICE_SRC="$LIB_DIR/ai-gauge-server.service"
+    local SERVICE_DST="$SYSTEMD_DIR/ai-gauge-server.service"
+
+    sed -e "s|__BUN_PATH__|$BUN_PATH|g" \
+        -e "s|__SERVER_PATH__|$SERVER_PATH|g" \
+        "$SERVICE_SRC" > "$SERVICE_DST"
+
+    echo "  Installed ai-gauge-server.service → $SERVICE_DST"
+
+    systemctl --user daemon-reload
+    systemctl --user enable --now ai-gauge-server 2>/dev/null || true
+    echo "  Enabled ai-gauge-server systemd service"
+
+    # Post-install verification (non-fatal)
+    sleep 2
+    if systemctl --user is-active --quiet ai-gauge-server; then
+        echo "  ai-gauge-server is active"
+    else
+        echo "  Warning: ai-gauge-server not yet active (may need a moment to start)"
+    fi
+
+    # Install StreamDock plugin (if Wine + StreamDock are present)
+    local STREAMDOCK_PLUGINS="$HOME/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins"
+    local PLUGIN_SRC="$LIB_DIR/streamdock-plugin"
+    if [[ -d "$STREAMDOCK_PLUGINS" ]] && [[ -d "$PLUGIN_SRC" ]]; then
+        local PLUGIN_DST="$STREAMDOCK_PLUGINS/com.ai-gauge.streamdock.sdPlugin"
+        mkdir -p "$PLUGIN_DST"
+        cp -r "$PLUGIN_SRC/"* "$PLUGIN_DST/"
+        echo "  Installed StreamDock plugin → $PLUGIN_DST"
+    else
+        echo "  StreamDock not found (skipped plugin install)"
+    fi
+
+    # Patch waybar config
+    if [[ -f "$WAYBAR_CONFIG" ]] && ! grep -q '"custom/ai-gauge"' "$WAYBAR_CONFIG"; then
+        python3 -c "
+import sys
+
+path = sys.argv[1]
+with open(path) as f:
+    text = f.read()
+
+text = text.replace(
+    '\"custom/notification-silencing-indicator\"],',
+    '\"custom/notification-silencing-indicator\", \"custom/ai-gauge\"],',
+    1
+)
+
+module_def = '''  \"custom/ai-gauge\": {
+    \"exec\": \"ai-gauge-waybar\",
+    \"return-type\": \"json\",
+    \"format\": \"{}\",
+    \"tooltip\": true,
+    \"on-click\": \"ai-gauge-menu\",
+    \"on-click-right\": \"ai-gauge-menu\"
+  }'''
+
+last_brace = text.rfind('}')
+before = text[:last_brace].rstrip()
+if not before.endswith(','):
+    before += ','
+text = before + '\n' + module_def + '\n' + text[last_brace:]
+
+with open(path, 'w') as f:
+    f.write(text)
+" "$WAYBAR_CONFIG"
+        echo "  Patched waybar config.jsonc"
+    else
+        echo "  Config already patched (skipped)"
+    fi
+
+    # Patch waybar CSS
+    if [[ -f "$WAYBAR_STYLE" ]] && ! grep -q '#custom-ai-gauge' "$WAYBAR_STYLE"; then
+        cat >> "$WAYBAR_STYLE" << 'CSS'
+
+/* ai-gauge-start */
+#custom-ai-gauge {
+  min-width: 12px;
+  margin-left: 5px;
+  margin-right: 0;
+  font-size: 11px;
+}
+
+#custom-ai-gauge.normal {
+  opacity: 0.7;
+}
+
+#custom-ai-gauge.warning {
+  color: #c5a555;
+}
+
+#custom-ai-gauge.critical {
+  color: #a55555;
+}
+
+#custom-ai-gauge.waiting {
+  opacity: 0.4;
+}
+/* ai-gauge-end */
+CSS
+        echo "  Patched waybar style.css"
+    else
+        echo "  CSS already patched (skipped)"
+    fi
+
+    # Restart waybar
+    if command -v omarchy-restart-waybar &>/dev/null; then
+        omarchy-restart-waybar
+    else
+        killall -SIGUSR2 waybar 2>/dev/null || (killall waybar 2>/dev/null; waybar &disown) || true
+    fi
+    echo "  Restarted waybar"
+
+    echo "Done!"
+}
+
+cmd_uninstall() {
+    echo "Uninstalling ai-gauge..."
+
+    # Stop and disable systemd service first
+    systemctl --user stop ai-gauge-server 2>/dev/null || true
+    systemctl --user disable ai-gauge-server 2>/dev/null || true
+    rm -f "$HOME/.config/systemd/user/ai-gauge-server.service"
+    systemctl --user daemon-reload 2>/dev/null || true
+    echo "  Stopped and removed ai-gauge-server service"
+
+    # Clean waybar config
+    if [[ -f "$WAYBAR_CONFIG" ]] && grep -q '"custom/ai-gauge"' "$WAYBAR_CONFIG"; then
+        python3 -c "
+import sys
+
+path = sys.argv[1]
+with open(path) as f:
+    text = f.read()
+
+text = text.replace(', \"custom/ai-gauge\"', '', 1)
+text = text.replace('\"custom/ai-gauge\", ', '', 1)
+
+lines = text.splitlines(True)
+result = []
+skip = False
+depth = 0
+for line in lines:
+    if not skip and '\"custom/ai-gauge\"' in line and ':' in line:
+        skip = True
+        depth = line.count('{') - line.count('}')
+        for j in range(len(result) - 1, -1, -1):
+            stripped = result[j].rstrip()
+            if stripped.endswith(','):
+                result[j] = stripped[:-1] + '\n'
+                break
+            elif stripped:
+                break
+        continue
+    if skip:
+        depth += line.count('{') - line.count('}')
+        if depth <= 0:
+            skip = False
+        continue
+    result.append(line)
+
+with open(path, 'w') as f:
+    f.writelines(result)
+" "$WAYBAR_CONFIG"
+        echo "  Cleaned waybar config.jsonc"
+    else
+        echo "  Config not patched (skipped)"
+    fi
+
+    # Clean waybar CSS
+    if [[ -f "$WAYBAR_STYLE" ]] && grep -q 'ai-gauge-start' "$WAYBAR_STYLE"; then
+        sed -i '/\/\* ai-gauge-start \*\//,/\/\* ai-gauge-end \*\//d' "$WAYBAR_STYLE"
+        echo "  Cleaned waybar style.css"
+    else
+        echo "  CSS not patched (skipped)"
+    fi
+
+    # Clean runtime state
+    rm -rf "${XDG_RUNTIME_DIR:-/tmp}/ai-gauge"
+    echo "  Cleaned runtime state"
+
+    # Clean config
+    rm -rf "$HOME/.config/ai-gauge"
+    echo "  Removed config"
+
+    # Remove StreamDock plugin
+    local STREAMDOCK_PLUGINS="$HOME/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins"
+    local PLUGIN_DST="$STREAMDOCK_PLUGINS/com.ai-gauge.streamdock.sdPlugin"
+    if [[ -d "$PLUGIN_DST" ]]; then
+        rm -rf "$PLUGIN_DST"
+        echo "  Removed StreamDock plugin"
+    fi
+
+    # Restart waybar
+    if command -v omarchy-restart-waybar &>/dev/null; then
+        omarchy-restart-waybar
+    else
+        killall -SIGUSR2 waybar 2>/dev/null || (killall waybar 2>/dev/null; waybar &disown) || true
+    fi
+    echo "  Restarted waybar"
+
+    echo "Done! Run 'bun remove -g ai-gauge' to remove the package itself."
+}
+
+case "${1:-}" in
+    setup)    cmd_setup ;;
+    uninstall) cmd_uninstall ;;
+    status)   cmd_status ;;
+    version)  cmd_version ;;
+    -v|--version) cmd_version ;;
+    -h|--help|"") usage ;;
+    *)
+        echo "Unknown command: $1"
+        usage
+        exit 1
+        ;;
+esac
