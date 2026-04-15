@@ -1,0 +1,38 @@
+{
+  "Actions": [
+    {
+      "UUID": "com.ccusage.streamdock.display.action",
+      "Name": "CC Usage",
+      "Icon": "Images/ccusageAction",
+      "States": [
+        {
+          "Image": "Images/ccusageAction"
+        }
+      ],
+      "Tooltip": "Show Claude Code usage",
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false
+    }
+  ],
+  "SDKVersion": 1,
+  "Author": "merely04",
+  "Name": "CC Usage",
+  "Description": "Displays Claude Code usage stats on a key.",
+  "Version": "1.0.0",
+  "Category": "CC Usage",
+  "CategoryIcon": "Images/ccusageAction",
+  "Icon": "Images/ccusageAction",
+  "URL": "https://claude.ai/",
+  "UUID": "com.ccusage.streamdock.display",
+  "CodePath": "plugin/run.bat",
+  "CodePathWin": "plugin/run.bat",
+  "OS": [
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "Software": {
+    "MinimumVersion": "2.9"
+  }
+}
