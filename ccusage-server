@@ -1,0 +1,370 @@
+#!/usr/bin/env bun
+
+import { renameSync } from 'node:fs';
+import { promises as fsPromises } from 'node:fs';
+import net from 'node:net';
+
+const CREDS_FILE = `${process.env.HOME}/.claude/.credentials.json`;
+const OPENCODE_AUTH_FILE = `${process.env.HOME}/.local/share/opencode/auth.json`;
+const CONFIG_FILE = `${process.env.HOME}/.config/ccusage/config.json`;
+const STATE_DIR = `${process.env.XDG_RUNTIME_DIR || '/tmp'}/ccusage`;
+const WS_PORT = 19876;
+const POLL_INTERVAL = 60_000;
+const BACKOFF_INTERVAL = 300_000;
+const API_URL = 'https://api.anthropic.com/api/oauth/usage';
+
+let claudeVersion = '2.1.100';
+let cachedData = null;
+let currentInterval = POLL_INTERVAL;
+let alerted80 = false;
+let server;
+let fetchInFlight = null;
+const connectedClients = new Set();
+
+function logError(message) {
+  console.error(message);
+}
+
+function isTokenValid(expiresAt) {
+  return typeof expiresAt === 'number' && expiresAt > Date.now();
+}
+
+async function readConfig() {
+  try {
+    const data = await Bun.file(CONFIG_FILE).json();
+    return {
+      tokenSource: data?.tokenSource ?? 'claude-code',
+      plan: data?.plan ?? null,
+    };
+  } catch {
+    return { tokenSource: 'claude-code', plan: null };
+  }
+}
+
+async function readClaudeCodeCredentials() {
+  try {
+    const data = await Bun.file(CREDS_FILE).json();
+    const oauth = data?.claudeAiOauth;
+    if (!oauth?.accessToken) return null;
+    return {
+      token: oauth.accessToken,
+      expiresAt: oauth.expiresAt,
+      subscriptionType: oauth.subscriptionType,
+    };
+  } catch {
+    logError('no claude-code credentials');
+    return null;
+  }
+}
+
+async function readOpenCodeCredentials() {
+  try {
+    const data = await Bun.file(OPENCODE_AUTH_FILE).json();
+    const anthropic = data?.anthropic;
+    if (!anthropic?.access) return null;
+    return {
+      token: anthropic.access,
+      expiresAt: anthropic.expires,
+      subscriptionType: 'unknown',
+    };
+  } catch {
+    logError('no opencode credentials');
+    return null;
+  }
+}
+
+async function readCredentials() {
+  const config = await readConfig();
+
+  if (config.tokenSource === 'opencode') {
+    return readOpenCodeCredentials();
+  }
+
+  return readClaudeCodeCredentials();
+}
+
+async function detectClaudeVersion() {
+  try {
+    const proc = Bun.spawn(['claude', '--version'], {
+      stdout: 'pipe',
+      stderr: 'ignore',
+    });
+    const text = await new Response(proc.stdout).text();
+    await proc.exited;
+    const match = text.match(/[\d.]+/);
+    if (match?.[0]) claudeVersion = match[0];
+  } catch {
+    claudeVersion = '2.1.100';
+  }
+}
+
+async function atomicWrite(data) {
+  await fsPromises.mkdir(STATE_DIR, { recursive: true });
+  const tmp = `${STATE_DIR}/usage.tmp`;
+  const final = `${STATE_DIR}/usage.json`;
+
+  try {
+    await Bun.write(tmp, JSON.stringify(data));
+    const check = await Bun.file(tmp).json();
+    if (!check?.five_hour) throw new Error('invalid data in tmp file');
+    renameSync(tmp, final);
+    await Bun.write(`${STATE_DIR}/last_fetch`, String(Math.floor(Date.now() / 1000)));
+  } catch (error) {
+    try {
+      await fsPromises.unlink(tmp);
+    } catch {}
+    throw error;
+  }
+}
+
+async function loadCachedDataFromDisk(fallbackPlan) {
+  try {
+    const data = await Bun.file(`${STATE_DIR}/usage.json`).json();
+    if (data?.five_hour) {
+      cachedData = {
+        ...data,
+        meta: {
+          plan: data?.meta?.plan ?? fallbackPlan,
+          fetchedAt: data?.meta?.fetchedAt ?? new Date().toISOString(),
+        },
+      };
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+function formatDuration(resetsAt) {
+  if (!resetsAt) return '?';
+  const remaining = Math.max(0, (new Date(resetsAt).getTime() - Date.now()) / 1000);
+  if (remaining <= 0) return 'now';
+  const hours = Math.floor(remaining / 3600);
+  const mins = Math.floor((remaining % 3600) / 60);
+  return hours > 0 ? `${hours}h${String(mins).padStart(2, '0')}m` : `${mins}m`;
+}
+
+function broadcastToAll(data) {
+  if (!data) return;
+  const payload = JSON.stringify(data);
+  for (const ws of connectedClients) {
+    try {
+      ws.send(payload);
+    } catch {}
+  }
+}
+
+function checkNotification() {
+  if (!cachedData?.five_hour) return;
+  const fiveInt = Math.round(Number(cachedData.five_hour.utilization) || 0);
+
+  if (fiveInt >= 80) {
+    if (!alerted80) {
+      const remaining = formatDuration(cachedData.five_hour.resets_at);
+      Bun.spawn([
+        'notify-send',
+        '-u',
+        'critical',
+        '-t',
+        '10000',
+        '-a',
+        'Claude Code',
+        `5-hour limit at ${fiveInt}%`,
+        `Resets in ${remaining}`,
+      ], {
+        stdout: 'ignore',
+        stderr: 'ignore',
+      });
+      alerted80 = true;
+    }
+  } else if (fiveInt < 50) {
+    // Only clear alert when below 50% — prevents re-notification in 50-79% oscillation zone
+    alerted80 = false;
+  }
+  // 50-79%: warning zone — alert state unchanged (persists until usage drops below 50%)
+}
+
+async function fetchUsage() {
+  const creds = await readCredentials();
+  if (!creds || !creds.token) return false;
+  if (!isTokenValid(creds.expiresAt)) {
+    logError('token expired, skipping fetch');
+    return false;
+  }
+
+  try {
+    const res = await fetch(API_URL, {
+      signal: AbortSignal.timeout(10_000),
+      headers: {
+        Authorization: `Bearer ${creds.token}`,
+        'anthropic-beta': 'oauth-2025-04-20',
+        'User-Agent': `claude-code/${claudeVersion}`,
+      },
+    });
+
+    const data = await res.json();
+    if (!data?.five_hour) return false;
+
+    const config = await readConfig();
+    const plan = config.plan && config.plan !== 'unknown' ? config.plan : creds.subscriptionType;
+    cachedData = {
+      ...data,
+      meta: {
+        plan: plan ?? 'unknown',
+        fetchedAt: new Date().toISOString(),
+      },
+    };
+
+    await atomicWrite(cachedData);
+    return true;
+  } catch (err) {
+    logError(`fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
+
+async function fetchAndHandleBroadcast() {
+  if (fetchInFlight) return fetchInFlight;
+
+  fetchInFlight = (async () => {
+    const success = await fetchUsage();
+    if (success) {
+      currentInterval = POLL_INTERVAL;
+      broadcastToAll(cachedData);
+      checkNotification();
+    } else {
+      currentInterval = BACKOFF_INTERVAL;
+    }
+    return success;
+  })();
+
+  try {
+    return await fetchInFlight;
+  } finally {
+    fetchInFlight = null;
+  }
+}
+
+async function refreshNow() {
+  const success = await fetchAndHandleBroadcast();
+  if (!success && cachedData) {
+    cachedData = {
+      ...cachedData,
+      meta: {
+        ...cachedData.meta,
+        fetchedAt: new Date().toISOString(),
+      },
+    };
+    await atomicWrite(cachedData);
+    broadcastToAll(cachedData);
+    checkNotification();
+  }
+}
+
+async function pollLoop() {
+  while (true) {
+    await Bun.sleep(currentInterval);
+    await fetchAndHandleBroadcast();
+  }
+}
+
+async function isAddressListening(host) {
+  return await new Promise((resolve) => {
+    const socket = net.connect({ host, port: WS_PORT });
+    const done = (value) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(value);
+    };
+
+    socket.setTimeout(500);
+    socket.once('connect', () => done(true));
+    socket.once('timeout', () => done(false));
+    socket.once('error', (error) => {
+      if (error?.code === 'ECONNREFUSED' || error?.code === 'EHOSTUNREACH' || error?.code === 'ENETUNREACH') {
+        done(false);
+        return;
+      }
+      done(true);
+    });
+  });
+}
+
+async function ensurePortAvailable() {
+  if (await isAddressListening('127.0.0.1')) {
+    logError(`ccusage-server: port ${WS_PORT} already in use`);
+    process.exit(1);
+  }
+
+  if (await isAddressListening('::1')) {
+    logError(`ccusage-server: port ${WS_PORT} already in use`);
+    process.exit(1);
+  }
+}
+
+function createServer() {
+  try {
+    return Bun.serve({
+      port: WS_PORT,
+      hostname: 'localhost',
+      reusePort: false,
+      fetch(req, serverInstance) {
+        if (serverInstance.upgrade(req)) return;
+        return new Response('WS only', { status: 426 });
+      },
+      websocket: {
+        open(ws) {
+          connectedClients.add(ws);
+          if (cachedData) ws.send(JSON.stringify(cachedData));
+        },
+        message(_ws, msg) {
+          try {
+            const cmd = JSON.parse(typeof msg === 'string' ? msg : Buffer.from(msg).toString('utf8'));
+            if (cmd?.command === 'refresh') {
+              void refreshNow();
+            }
+          } catch {}
+        },
+        close(ws) {
+          connectedClients.delete(ws);
+        },
+      },
+    });
+  } catch (err) {
+    const text = String(err);
+    if (err?.code === 'EADDRINUSE' || text.includes('already in use') || text.includes('EADDRINUSE')) {
+      logError(`ccusage-server: port ${WS_PORT} already in use`);
+      process.exit(1);
+    }
+    throw err;
+  }
+}
+
+function setupShutdown() {
+  const shutdown = () => {
+    try {
+      server?.stop();
+    } finally {
+      process.exit(0);
+    }
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+}
+
+async function main() {
+  await fsPromises.mkdir(STATE_DIR, { recursive: true });
+  const config = await readConfig();
+  console.error(`token source: ${config.tokenSource}`);
+  await detectClaudeVersion();
+  const startupCreds = await readCredentials();
+  await loadCachedDataFromDisk(startupCreds?.subscriptionType);
+  await fetchAndHandleBroadcast();
+  await ensurePortAvailable();
+  server = createServer();
+  setupShutdown();
+  console.error(`ccusage-server listening on ws://localhost:${WS_PORT}`);
+  await pollLoop();
+}
+
+await main();

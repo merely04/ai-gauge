@@ -1,0 +1,13 @@
+[Unit]
+Description=ccusage WebSocket server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=__BUN_PATH__ __SERVER_PATH__
+Restart=always
+RestartSec=5
+Environment=XDG_RUNTIME_DIR=%t
+
+[Install]
+WantedBy=default.target
