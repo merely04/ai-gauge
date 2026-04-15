@@ -1,4 +1,4 @@
-# cc-usage
+# ai-gauge
 
 Real-time Claude Code usage monitor for Waybar on Linux. Tracks 5-hour and weekly API rate limits with countdown timers, desktop notifications, and a StreamDock plugin for physical stream decks.
 
@@ -21,17 +21,17 @@ Real-time Claude Code usage monitor for Waybar on Linux. Tracks 5-hour and weekl
 
 ```
 Read and follow the installation guide:
-https://raw.githubusercontent.com/merely04/cc-usage/master/docs/LLM_INSTALL.md
+https://raw.githubusercontent.com/merely04/ai-gauge/master/docs/LLM_INSTALL.md
 ```
 
 ## Install
 
 ```bash
-git clone https://github.com/merely04/cc-usage.git ~/dev/cc-usage
-bash ~/dev/cc-usage/install.sh
+git clone https://github.com/merely04/ai-gauge.git ~/dev/ai-gauge
+bash ~/dev/ai-gauge/install.sh
 ```
 
-To uninstall: `bash ~/dev/cc-usage/uninstall.sh`
+To uninstall: `bash ~/dev/ai-gauge/uninstall.sh`
 
 Requires [Bun](https://bun.sh) and a Linux desktop with Waybar (Hyprland, Sway, or any wlroots compositor).
 
@@ -70,7 +70,7 @@ Plan: max
 
 ## Configuration
 
-Config file: `~/.config/ccusage/config.json`
+Config file: `~/.config/ai-gauge/config.json`
 
 ```json
 {"tokenSource": "claude-code", "plan": "max"}
@@ -84,9 +84,9 @@ Config file: `~/.config/ccusage/config.json`
 Change settings via UI (menu → ⚙ Settings) or CLI:
 
 ```bash
-ccusage-config set tokenSource opencode
-ccusage-config set plan max
-ccusage-config get
+ai-gauge-config set tokenSource opencode
+ai-gauge-config set plan max
+ai-gauge-config get
 ```
 
 ## StreamDock (Fifine D6)
@@ -97,27 +97,27 @@ The plugin shows usage stats on a physical key of the Fifine AmpliGame D6 stream
 
 **Requirements**: Fifine D6 + StreamDock app running via Wine on Linux.
 
-**Setup**: `install.sh` copies the plugin automatically. Open StreamDock → find **CC Usage** in the action list → drag it onto a key.
+**Setup**: `install.sh` copies the plugin automatically. Open StreamDock → find **AI Gauge** in the action list → drag it onto a key.
 
-The button connects to `ccusage-server` via WebSocket and updates in real time. If the server is not running, the button shows `--`.
+The button connects to `ai-gauge-server` via WebSocket and updates in real time. If the server is not running, the button shows `--`.
 
 ## How it works
 
-`ccusage-server` runs as a systemd user service, polling the Anthropic usage API (`/api/oauth/usage`) every 60 seconds. It reads the OAuth token from either Claude Code CLI or OpenCode credentials and broadcasts results to all connected WebSocket clients on `ws://localhost:19876`.
+`ai-gauge-server` runs as a systemd user service, polling the Anthropic usage API (`/api/oauth/usage`) every 60 seconds. It reads the OAuth token from either Claude Code CLI or OpenCode credentials and broadcasts results to all connected WebSocket clients on `ws://localhost:19876`.
 
-`ccusage-waybar` is a thin WebSocket client that renders each update as waybar-compatible JSON. On disconnect it shows a waiting state and reconnects automatically.
+`ai-gauge-waybar` is a thin WebSocket client that renders each update as waybar-compatible JSON. On disconnect it shows a waiting state and reconnects automatically.
 
-The server writes `usage.json` atomically to `$XDG_RUNTIME_DIR/ccusage/` so other tools can read it too.
+The server writes `usage.json` atomically to `$XDG_RUNTIME_DIR/ai-gauge/` so other tools can read it too.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `ccusage-server` | WebSocket server — fetches Anthropic API, broadcasts to clients (port 19876) |
-| `ccusage-server.service` | systemd user service unit |
-| `ccusage-waybar` | Thin WS client — renders waybar JSON from server data |
-| `ccusage-menu` | Click menu — refresh, copy, settings |
-| `ccusage-config` | Settings CLI/UI — token source, plan name |
+| `ai-gauge-server` | WebSocket server — fetches Anthropic API, broadcasts to clients (port 19876) |
+| `ai-gauge-server.service` | systemd user service unit |
+| `ai-gauge-waybar` | Thin WS client — renders waybar JSON from server data |
+| `ai-gauge-menu` | Click menu — refresh, copy, settings |
+| `ai-gauge-config` | Settings CLI/UI — token source, plan name |
 | `streamdock-plugin/` | StreamDock (Fifine D6) button plugin |
 | `install.sh` | Installs service + symlinks + plugin, patches waybar config + CSS |
 | `uninstall.sh` | Removes everything cleanly |

@@ -6,8 +6,8 @@ import net from 'node:net';
 
 const CREDS_FILE = `${process.env.HOME}/.claude/.credentials.json`;
 const OPENCODE_AUTH_FILE = `${process.env.HOME}/.local/share/opencode/auth.json`;
-const CONFIG_FILE = `${process.env.HOME}/.config/ccusage/config.json`;
-const STATE_DIR = `${process.env.XDG_RUNTIME_DIR || '/tmp'}/ccusage`;
+const CONFIG_FILE = `${process.env.HOME}/.config/ai-gauge/config.json`;
+const STATE_DIR = `${process.env.XDG_RUNTIME_DIR || '/tmp'}/ai-gauge`;
 const WS_PORT = 19876;
 const POLL_INTERVAL = 60_000;
 const BACKOFF_INTERVAL = 300_000;
@@ -291,12 +291,12 @@ async function isAddressListening(host) {
 
 async function ensurePortAvailable() {
   if (await isAddressListening('127.0.0.1')) {
-    logError(`ccusage-server: port ${WS_PORT} already in use`);
+    logError(`ai-gauge-server: port ${WS_PORT} already in use`);
     process.exit(1);
   }
 
   if (await isAddressListening('::1')) {
-    logError(`ccusage-server: port ${WS_PORT} already in use`);
+    logError(`ai-gauge-server: port ${WS_PORT} already in use`);
     process.exit(1);
   }
 }
@@ -332,7 +332,7 @@ function createServer() {
   } catch (err) {
     const text = String(err);
     if (err?.code === 'EADDRINUSE' || text.includes('already in use') || text.includes('EADDRINUSE')) {
-      logError(`ccusage-server: port ${WS_PORT} already in use`);
+      logError(`ai-gauge-server: port ${WS_PORT} already in use`);
       process.exit(1);
     }
     throw err;
@@ -363,7 +363,7 @@ async function main() {
   await ensurePortAvailable();
   server = createServer();
   setupShutdown();
-  console.error(`ccusage-server listening on ws://localhost:${WS_PORT}`);
+  console.error(`ai-gauge-server listening on ws://localhost:${WS_PORT}`);
   await pollLoop();
 }
 

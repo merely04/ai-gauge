@@ -5,7 +5,7 @@ const fs = require('fs');
 const net = require('net');
 const { EventEmitter } = require('events');
 
-const ACTION_UUID = 'com.ccusage.streamdock.display.action';
+const ACTION_UUID = 'com.ai-gauge.streamdock.display.action';
 const RECONNECT_MS = 3000;
 
 function parseArgs(argv) {
@@ -245,7 +245,7 @@ function createWebSocket(url) {
   return new MinimalWebSocket(url);
 }
 
-class CCUsagePlugin {
+class AIGaugePlugin {
   constructor(options) {
     this.port = options.port;
     this.pluginUUID = options.pluginUUID;
@@ -499,5 +499,5 @@ function buildSvgDataUrl(usage) {
   return `data:image/svg+xml;charset=utf8,${encodeURIComponent(svg)}`;
 }
 
-const plugin = new CCUsagePlugin(parseArgs(process.argv));
+const plugin = new AIGaugePlugin(parseArgs(process.argv));
 plugin.start();

@@ -4,9 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WAYBAR_CONFIG="$HOME/.config/waybar/config.jsonc"
 WAYBAR_STYLE="$HOME/.config/waybar/style.css"
-SYMLINKS=(ccusage-waybar ccusage-menu ccusage-server ccusage-config)
+SYMLINKS=(ai-gauge-waybar ai-gauge-menu ai-gauge-server ai-gauge-config)
 
-echo "Installing cc-usage waybar module..."
+echo "Installing ai-gauge waybar module..."
 
 mkdir -p "$HOME/.local/bin"
 for name in "${SYMLINKS[@]}"; do
@@ -24,7 +24,7 @@ fi
 echo "  Found bun at $BUN_PATH"
 
 # Create default config if missing
-CONFIG_DIR="$HOME/.config/ccusage"
+CONFIG_DIR="$HOME/.config/ai-gauge"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 mkdir -p "$CONFIG_DIR"
 if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -37,31 +37,31 @@ fi
 # Install systemd service
 SYSTEMD_DIR="$HOME/.config/systemd/user"
 mkdir -p "$SYSTEMD_DIR"
-SERVICE_SRC="$SCRIPT_DIR/ccusage-server.service"
-SERVICE_DST="$SYSTEMD_DIR/ccusage-server.service"
+SERVICE_SRC="$SCRIPT_DIR/ai-gauge-server.service"
+SERVICE_DST="$SYSTEMD_DIR/ai-gauge-server.service"
 
 # Copy and substitute placeholders
 sed -e "s|__BUN_PATH__|$BUN_PATH|g" \
-    -e "s|__SERVER_PATH__|$SCRIPT_DIR/ccusage-server|g" \
+    -e "s|__SERVER_PATH__|$SCRIPT_DIR/ai-gauge-server|g" \
     "$SERVICE_SRC" > "$SERVICE_DST"
 
-echo "  Installed ccusage-server.service → $SERVICE_DST"
+echo "  Installed ai-gauge-server.service → $SERVICE_DST"
 
 systemctl --user daemon-reload
-systemctl --user enable --now ccusage-server 2>/dev/null || true
-echo "  Enabled ccusage-server systemd service"
+systemctl --user enable --now ai-gauge-server 2>/dev/null || true
+echo "  Enabled ai-gauge-server systemd service"
 
 # Post-install verification (non-fatal)
 sleep 2
-if systemctl --user is-active --quiet ccusage-server; then
-    echo "  ccusage-server is active"
+if systemctl --user is-active --quiet ai-gauge-server; then
+    echo "  ai-gauge-server is active"
 else
-    echo "  Warning: ccusage-server not yet active (may need a moment to start)"
+    echo "  Warning: ai-gauge-server not yet active (may need a moment to start)"
 fi
 
 # Install StreamDock plugin (if Wine + StreamDock are present)
 STREAMDOCK_PLUGINS="$HOME/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins"
-PLUGIN_NAME="com.ccusage.streamdock.sdPlugin"
+PLUGIN_NAME="com.ai-gauge.streamdock.sdPlugin"
 PLUGIN_SRC="$SCRIPT_DIR/streamdock-plugin"
 if [[ -d "$STREAMDOCK_PLUGINS" ]] && [[ -d "$PLUGIN_SRC" ]]; then
     PLUGIN_DST="$STREAMDOCK_PLUGINS/$PLUGIN_NAME"
@@ -72,7 +72,7 @@ else
     echo "  StreamDock not found (skipped plugin install)"
 fi
 
-if [[ -f "$WAYBAR_CONFIG" ]] && ! grep -q '"custom/ccusage"' "$WAYBAR_CONFIG"; then
+if [[ -f "$WAYBAR_CONFIG" ]] && ! grep -q '"custom/ai-gauge"' "$WAYBAR_CONFIG"; then
     python3 -c "
 import sys
 
@@ -82,21 +82,21 @@ with open(path) as f:
 
 # Add to modules-center (last element, before closing bracket)
 # Find: ...\"custom/notification-silencing-indicator\"]
-# Replace with: ...\"custom/notification-silencing-indicator\", \"custom/ccusage\"]
+# Replace with: ...\"custom/notification-silencing-indicator\", \"custom/ai-gauge\"]
 text = text.replace(
     '\"custom/notification-silencing-indicator\"],',
-    '\"custom/notification-silencing-indicator\", \"custom/ccusage\"],',
+    '\"custom/notification-silencing-indicator\", \"custom/ai-gauge\"],',
     1
 )
 
 # Add module definition before final }
-module_def = '''  \"custom/ccusage\": {
-    \"exec\": \"ccusage-waybar\",
+module_def = '''  \"custom/ai-gauge\": {
+    \"exec\": \"ai-gauge-waybar\",
     \"return-type\": \"json\",
     \"format\": \"{}\",
     \"tooltip\": true,
-    \"on-click\": \"ccusage-menu\",
-    \"on-click-right\": \"ccusage-menu\"
+    \"on-click\": \"ai-gauge-menu\",
+    \"on-click-right\": \"ai-gauge-menu\"
   }'''
 
 last_brace = text.rfind('}')
@@ -113,37 +113,37 @@ else
     echo "  Config already patched (skipped)"
 fi
 
-if [[ -f "$WAYBAR_STYLE" ]] && ! grep -q '#custom-ccusage' "$WAYBAR_STYLE"; then
+if [[ -f "$WAYBAR_STYLE" ]] && ! grep -q '#custom-ai-gauge' "$WAYBAR_STYLE"; then
     cat >> "$WAYBAR_STYLE" << 'CSS'
 
-/* ccusage-start */
-#custom-ccusage {
+/* ai-gauge-start */
+#custom-ai-gauge {
   min-width: 12px;
   margin-left: 5px;
   margin-right: 0;
   font-size: 11px;
 }
 
-#custom-ccusage.normal {
+#custom-ai-gauge.normal {
   opacity: 0.7;
 }
 
-#custom-ccusage.warning {
+#custom-ai-gauge.warning {
   color: #c5a555;
 }
 
-#custom-ccusage.critical {
+#custom-ai-gauge.critical {
   color: #a55555;
 }
 
-#custom-ccusage.expired {
+#custom-ai-gauge.expired {
   opacity: 0.3;
 }
 
-#custom-ccusage.waiting {
+#custom-ai-gauge.waiting {
   opacity: 0.4;
 }
-/* ccusage-end */
+/* ai-gauge-end */
 CSS
     echo "  Patched waybar style.css"
 else

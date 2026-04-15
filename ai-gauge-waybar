@@ -109,7 +109,7 @@ function printWaiting() {
   process.stdout.write(JSON.stringify({
     text: '✦ ···',
     class: 'waiting',
-    tooltip: 'Connecting to ccusage-server...',
+    tooltip: 'Connecting to ai-gauge-server...',
   }) + '\n');
 }
 

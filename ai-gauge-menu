@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/ccusage"
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/ai-gauge"
 mkdir -p "$STATE_DIR"
 
 # Build usage summary for clipboard
@@ -25,28 +25,28 @@ choice=$(printf '%s\n' \
     "  Copy Usage" \
     "  Raw Data" \
     "⚙  Settings" \
-    | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 300 -p "Claude Usage" 2>/dev/null
+    | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 300 -p "AI Gauge" 2>/dev/null
 ) || exit 0
 
 case "$choice" in
     *"Refresh"*)
         bun -e 'const ws = new WebSocket("ws://localhost:19876"); ws.onopen = () => { ws.send(JSON.stringify({command:"refresh"})); ws.close(); };'
-        notify-send -t 2000 -a "Claude Usage" "Refreshing usage data..."
+        notify-send -t 2000 -a "AI Gauge" "Refreshing usage data..."
         ;;
     *"Copy"*)
         summary=$(build_summary)
         printf '%s' "$summary" | wl-copy 2>/dev/null
-        notify-send -t 2000 -a "Claude Usage" "Copied to clipboard"
+        notify-send -t 2000 -a "AI Gauge" "Copied to clipboard"
         ;;
     *"Raw"*)
         if [[ -f "$STATE_DIR/usage.json" ]]; then
             jq . "$STATE_DIR/usage.json" | wl-copy 2>/dev/null
-            notify-send -t 2000 -a "Claude Usage" "Raw JSON copied to clipboard"
+            notify-send -t 2000 -a "AI Gauge" "Raw JSON copied to clipboard"
         else
-            notify-send -t 2000 -a "Claude Usage" "No data available yet"
+            notify-send -t 2000 -a "AI Gauge" "No data available yet"
         fi
         ;;
     *"Settings"*)
-        ccusage-config
+        ai-gauge-config
         ;;
 esac

@@ -1,5 +1,5 @@
 [Unit]
-Description=ccusage WebSocket server
+Description=ai-gauge WebSocket server
 After=network.target
 
 [Service]

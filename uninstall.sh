@@ -3,23 +3,23 @@ set -euo pipefail
 
 WAYBAR_CONFIG="$HOME/.config/waybar/config.jsonc"
 WAYBAR_STYLE="$HOME/.config/waybar/style.css"
-SYMLINKS=(ccusage-waybar ccusage-menu ccusage-server ccusage-config)
+SYMLINKS=(ai-gauge-waybar ai-gauge-menu ai-gauge-server ai-gauge-config)
 
-echo "Uninstalling cc-usage waybar module..."
+echo "Uninstalling ai-gauge waybar module..."
 
 # Stop and disable systemd service first
-systemctl --user stop ccusage-server 2>/dev/null || true
-systemctl --user disable ccusage-server 2>/dev/null || true
-rm -f "$HOME/.config/systemd/user/ccusage-server.service"
+systemctl --user stop ai-gauge-server 2>/dev/null || true
+systemctl --user disable ai-gauge-server 2>/dev/null || true
+rm -f "$HOME/.config/systemd/user/ai-gauge-server.service"
 systemctl --user daemon-reload 2>/dev/null || true
-echo "  Stopped and removed ccusage-server service"
+echo "  Stopped and removed ai-gauge-server service"
 
 for name in "${SYMLINKS[@]}"; do
     rm -f "$HOME/.local/bin/$name"
     echo "  Removed ~/.local/bin/$name"
 done
 
-if [[ -f "$WAYBAR_CONFIG" ]] && grep -q '"custom/ccusage"' "$WAYBAR_CONFIG"; then
+if [[ -f "$WAYBAR_CONFIG" ]] && grep -q '"custom/ai-gauge"' "$WAYBAR_CONFIG"; then
     python3 -c "
 import sys, json, re
 
@@ -27,15 +27,15 @@ path = sys.argv[1]
 with open(path) as f:
     text = f.read()
 
-text = text.replace(', \"custom/ccusage\"', '', 1)
-text = text.replace('\"custom/ccusage\", ', '', 1)
+text = text.replace(', \"custom/ai-gauge\"', '', 1)
+text = text.replace('\"custom/ai-gauge\", ', '', 1)
 
 lines = text.splitlines(True)
 result = []
 skip = False
 depth = 0
 for line in lines:
-    if not skip and '\"custom/ccusage\"' in line and ':' in line:
+    if not skip and '\"custom/ai-gauge\"' in line and ':' in line:
         skip = True
         depth = line.count('{') - line.count('}')
         for j in range(len(result) - 1, -1, -1):
@@ -61,21 +61,21 @@ else
     echo "  Config not patched (skipped)"
 fi
 
-if [[ -f "$WAYBAR_STYLE" ]] && grep -q 'ccusage-start' "$WAYBAR_STYLE"; then
-    sed -i '/\/\* ccusage-start \*\//,/\/\* ccusage-end \*\//d' "$WAYBAR_STYLE"
+if [[ -f "$WAYBAR_STYLE" ]] && grep -q 'ai-gauge-start' "$WAYBAR_STYLE"; then
+    sed -i '/\/\* ai-gauge-start \*\//,/\/\* ai-gauge-end \*\//d' "$WAYBAR_STYLE"
     echo "  Cleaned waybar style.css"
 else
     echo "  CSS not patched (skipped)"
 fi
 
-rm -rf "${XDG_RUNTIME_DIR:-/tmp}/ccusage"
+rm -rf "${XDG_RUNTIME_DIR:-/tmp}/ai-gauge"
 echo "  Cleaned runtime state"
 
-rm -rf "$HOME/.config/ccusage"
+rm -rf "$HOME/.config/ai-gauge"
 echo "  Removed config"
 
 STREAMDOCK_PLUGINS="$HOME/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins"
-PLUGIN_DST="$STREAMDOCK_PLUGINS/com.ccusage.streamdock.sdPlugin"
+PLUGIN_DST="$STREAMDOCK_PLUGINS/com.ai-gauge.streamdock.sdPlugin"
 if [[ -d "$PLUGIN_DST" ]]; then
     rm -rf "$PLUGIN_DST"
     echo "  Removed StreamDock plugin"

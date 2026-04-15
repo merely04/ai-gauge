@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG_DIR="$HOME/.config/ccusage"
+CONFIG_DIR="$HOME/.config/ai-gauge"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 
 mkdir -p "$CONFIG_DIR"
@@ -26,7 +26,7 @@ set_field() {
 }
 
 restart_server() {
-    systemctl --user restart ccusage-server 2>/dev/null || true
+    systemctl --user restart ai-gauge-server 2>/dev/null || true
 }
 
 # CLI mode
@@ -41,7 +41,7 @@ fi
 
 if [[ "${1:-}" == "set" ]]; then
     if [[ -z "${2:-}" || -z "${3:-}" ]]; then
-        echo "Usage: ccusage-config set <key> <value>" >&2
+        echo "Usage: ai-gauge-config set <key> <value>" >&2
         exit 1
     fi
     set_field "$2" "$3"
@@ -66,7 +66,7 @@ case "$choice" in
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 150 -p "Token Source" 2>/dev/null
         ) || exit 0
         set_field "tokenSource" "$new_source"
-        notify-send -t 2000 -a "Claude Usage" "Token source: $new_source"
+        notify-send -t 2000 -a "AI Gauge" "Token source: $new_source"
         restart_server
         ;;
     *"Plan"*)
@@ -74,7 +74,7 @@ case "$choice" in
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null
         ) || exit 0
         set_field "plan" "$new_plan"
-        notify-send -t 2000 -a "Claude Usage" "Plan: $new_plan"
+        notify-send -t 2000 -a "AI Gauge" "Plan: $new_plan"
         restart_server
         ;;
 esac

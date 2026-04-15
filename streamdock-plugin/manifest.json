@@ -1,12 +1,12 @@
 {
   "Actions": [
     {
-      "UUID": "com.ccusage.streamdock.display.action",
-      "Name": "CC Usage",
-      "Icon": "Images/ccusageAction",
+      "UUID": "com.ai-gauge.streamdock.display.action",
+      "Name": "AI Gauge",
+      "Icon": "Images/aiGaugeAction",
       "States": [
         {
-          "Image": "Images/ccusageAction"
+          "Image": "Images/aiGaugeAction"
         }
       ],
       "Tooltip": "Show Claude Code usage",
@@ -16,14 +16,14 @@
   ],
   "SDKVersion": 1,
   "Author": "merely04",
-  "Name": "CC Usage",
+  "Name": "AI Gauge",
   "Description": "Displays Claude Code usage stats on a key.",
   "Version": "1.0.0",
-  "Category": "CC Usage",
-  "CategoryIcon": "Images/ccusageAction",
-  "Icon": "Images/ccusageAction",
+  "Category": "AI Gauge",
+  "CategoryIcon": "Images/aiGaugeAction",
+  "Icon": "Images/aiGaugeAction",
   "URL": "https://claude.ai/",
-  "UUID": "com.ccusage.streamdock.display",
+  "UUID": "com.ai-gauge.streamdock.display",
   "CodePath": "plugin/run.bat",
   "CodePathWin": "plugin/run.bat",
   "OS": [
