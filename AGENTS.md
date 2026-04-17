@@ -100,13 +100,43 @@ Port `19876` (hardcoded). All clients connect to `ws://localhost:19876`.
 
 ### Existing broadcast (server → all clients, every poll)
 
+Server broadcasts the **raw Anthropic API response** merged with a `meta` field — clients are responsible for formatting it into display-friendly form. (Earlier revisions of this doc incorrectly described the waybar-client output as the broadcast format; that is wrong, `bin/ai-gauge-waybar` PRODUCES that shape, it doesn't receive it.)
+
 ```json
-{"text":"✦ 44% 2h31m · 15%w","tooltip":"...","percentage":44,"class":"warning"}
+{
+  "five_hour": {"utilization": 100, "resets_at": "2026-04-17T22:00:00.410733+00:00"},
+  "seven_day": {"utilization": 16, "resets_at": "2026-04-24T03:00:00.410753+00:00"},
+  "seven_day_oauth_apps": null,
+  "seven_day_opus": null,
+  "seven_day_sonnet": {"utilization": 4, "resets_at": "2026-04-24T04:00:00.410758+00:00"},
+  "seven_day_cowork": null,
+  "seven_day_omelette": {"utilization": 0, "resets_at": null},
+  "extra_usage": {"is_enabled": true, "monthly_limit": 20000, "used_credits": 18752, "utilization": 93.76, "currency": "USD"},
+  "meta": {"plan": "unknown", "fetchedAt": "2026-04-17T20:27:38.885Z"}
+}
 ```
 
-`class` values: `""` (normal), `"warning"` (50-79%), `"critical"` (≥80%), `"waiting"` (no server).
+Field notes:
+- `five_hour.utilization` and `seven_day.utilization` are percentages (0–100+), sometimes non-integer.
+- `resets_at` is ISO-8601 with **microsecond precision and `+00:00` timezone** — Swift's `ISO8601DateFormatter` with `.withFractionalSeconds` only handles milliseconds, so the Swift client has a fallback parser (see `UsageModel.parseISODate`).
+- `extra_usage.monthly_limit` and `used_credits` are in cents; divide by 100 for dollars.
+- `meta.plan` and `meta.fetchedAt` are injected by the server (not upstream Anthropic fields).
+- Any of the `seven_day_*` windows may be `null`.
 
-### New: notify message (server → all clients, at threshold transitions)
+Client formatting responsibilities:
+- `bin/ai-gauge-waybar` → `render(data)` transforms to `{text, class, tooltip}` waybar JSON.
+- `macos/AIGauge/…/UsageModel.swift` → `update(from:)` ports the same logic to compute `text`, `tooltip`, `urgency` for the menubar.
+
+Urgency thresholds (shared across clients, based on `five_hour.utilization`):
+
+| Urgency | Waybar `class` | Swift `Urgency` | Condition |
+|---|---|---|---|
+| normal | `"normal"` | `.ok` | `< 50` |
+| warning | `"warning"` | `.warning` | `50 ≤ x < 80` |
+| critical | `"critical"` | `.critical` | `≥ 80` |
+| waiting | `"waiting"` | (N/A, shows `--`) | No server / connecting |
+
+### notify message (server → all clients, at threshold transitions)
 
 Broadcast when usage crosses 80% or 95% threshold (`pending=false → true`). Resets below 50%.
 
@@ -118,7 +148,7 @@ Broadcast when usage crosses 80% or 95% threshold (`pending=false → true`). Re
 - `percentage`: actual current value
 - `message`: human-readable string for notification body
 
-### New: setConfig command (client → server)
+### setConfig command (client → server)
 
 Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, writes atomically, re-broadcasts.
 
@@ -129,7 +159,7 @@ Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, write
 
 - key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`; `tokenSource` → `claude-code`, `opencode`
 - Server **rejects** any value outside the canonical enum (logs warning, config unchanged)
-- Backward compatibility: existing `{text, tooltip, percentage, class}` broadcast format stays unchanged
+- Do NOT change the raw-broadcast shape without updating both `bin/ai-gauge-waybar` and `macos/AIGauge/Sources/AIGauge/UsageModel.swift` in the same commit.
 
 ## Setup / uninstall — non-obvious details
 

@@ -13,7 +13,7 @@ const serverValues = {
 };
 
 const menubarValues = {
-  '__MENUBAR_BINARY_PATH__': '/usr/local/bin/ai-gauge-menubar',
+  '__MENUBAR_APP_EXEC__': '/usr/local/bin/AIGauge.app/Contents/MacOS/AIGauge',
   '__LOG_DIR__': '/tmp/test-logs',
   '__HOME__': '/tmp/test-home'
 };
@@ -65,7 +65,7 @@ describe('plist-template', () => {
     const template = readFileSync('lib/ai-gauge-menubar.plist.template', 'utf-8');
     const substituted = substituteTemplate(template, menubarValues);
     
-    expect(substituted).toContain('/usr/local/bin/ai-gauge-menubar');
+    expect(substituted).toContain('/usr/local/bin/AIGauge.app/Contents/MacOS/AIGauge');
     expect(substituted).toContain('/tmp/test-logs');
     expect(substituted).toContain('/tmp/test-home');
     expect(hasPlaceholders(substituted)).toBe(false);

@@ -4,17 +4,28 @@ import Combine
 let AI_GAUGE_WS_URL = URL(string: "ws://localhost:19876")!
 
 struct UsagePayload: Codable {
-    let text: String
-    let tooltip: String
-    let percentage: Int
-    let cssClass: String?
-
-    enum CodingKeys: String, CodingKey {
-        case text
-        case tooltip
-        case percentage
-        case cssClass = "class"
+    struct Window: Codable {
+        let utilization: Double?
+        let resets_at: String?
     }
+
+    struct ExtraUsage: Codable {
+        let is_enabled: Bool?
+        let utilization: Double?
+        let used_credits: Double?
+        let monthly_limit: Double?
+    }
+
+    struct Meta: Codable {
+        let plan: String?
+        let fetchedAt: String?
+    }
+
+    let five_hour: Window?
+    let seven_day: Window?
+    let seven_day_sonnet: Window?
+    let extra_usage: ExtraUsage?
+    let meta: Meta?
 }
 
 struct NotifyPayload: Codable {
@@ -108,6 +119,8 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
     private func handleMessage(_ text: String) {
         guard let data = text.data(using: .utf8) else { return }
 
+        // Notify payload has a "type" field — try it first so raw usage data
+        // (which never has `type`) doesn't accidentally match.
         if let notify = try? decoder.decode(NotifyPayload.self, from: data), notify.type == "notify" {
             DispatchQueue.main.async {
                 self.onNotify?(notify)
@@ -115,7 +128,7 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
             return
         }
 
-        if let usage = try? decoder.decode(UsagePayload.self, from: data) {
+        if let usage = try? decoder.decode(UsagePayload.self, from: data), usage.five_hour != nil {
             DispatchQueue.main.async {
                 self.lastUsagePayload = usage
                 self.onUsageUpdate?(usage)
