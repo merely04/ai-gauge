@@ -1,8 +1,9 @@
 import Foundation
+import Combine
 @preconcurrency import UserNotifications
 
 @MainActor
-final class NotificationManager {
+final class NotificationManager: ObservableObject {
     private let center: UNUserNotificationCenter
     private let defaults: UserDefaults
     private let authorizationRequestedKey = "ai-gauge.notifications.authorization-requested"

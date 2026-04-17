@@ -19,6 +19,7 @@ let claudeVersion = '2.1.100';
 let cachedData = null;
 let currentInterval = POLL_INTERVAL;
 let alerted80 = false;
+let alerted95 = false;
 let server;
 let fetchInFlight = null;
 const connectedClients = new Set();
@@ -149,6 +150,14 @@ function formatDuration(resetsAt) {
   return hours > 0 ? `${hours}h${String(mins).padStart(2, '0')}m` : `${mins}m`;
 }
 
+function formatDaysRemaining(resetsAt) {
+  if (!resetsAt) return '?';
+  const remaining = Math.max(0, (new Date(resetsAt).getTime() - Date.now()) / 1000);
+  if (remaining <= 0) return '0';
+  const days = Math.floor(remaining / 86400);
+  return days > 0 ? String(days) : '<1';
+}
+
 function broadcastToAll(data) {
   if (!data) return;
   const payload = JSON.stringify(data);
@@ -172,10 +181,36 @@ async function checkNotification() {
         urgency: 'critical',
       });
       alerted80 = true;
+      // WS notify broadcast (consumed by streamdock plugin, other clients)
+      const daysRemaining = formatDaysRemaining(cachedData?.seven_day?.resets_at);
+      const notifyMsg = JSON.stringify({
+        type: 'notify',
+        threshold: 80,
+        percentage: fiveInt,
+        message: `Usage at 80%, ~${daysRemaining} days remaining`,
+      });
+      for (const client of connectedClients) {
+        try { client.send(notifyMsg); } catch {}
+      }
+    }
+    if (fiveInt >= 95 && !alerted95) {
+      alerted95 = true;
+      // WS notify broadcast for 95% threshold transition
+      const daysRemaining = formatDaysRemaining(cachedData?.seven_day?.resets_at);
+      const notifyMsg = JSON.stringify({
+        type: 'notify',
+        threshold: 95,
+        percentage: fiveInt,
+        message: `Usage at 95%, ~${daysRemaining} days remaining`,
+      });
+      for (const client of connectedClients) {
+        try { client.send(notifyMsg); } catch {}
+      }
     }
   } else if (fiveInt < 50) {
     // Only clear alert when below 50% — prevents re-notification in 50-79% oscillation zone
     alerted80 = false;
+    alerted95 = false;
   }
   // 50-79%: warning zone — alert state unchanged (persists until usage drops below 50%)
 }
@@ -313,13 +348,47 @@ function createServer() {
           connectedClients.add(ws);
           if (cachedData) ws.send(JSON.stringify(cachedData));
         },
-        message(_ws, msg) {
+        async message(_ws, msg) {
+          let cmd;
           try {
-            const cmd = JSON.parse(typeof msg === 'string' ? msg : Buffer.from(msg).toString('utf8'));
-            if (cmd?.command === 'refresh') {
-              void refreshNow();
+            cmd = JSON.parse(typeof msg === 'string' ? msg : Buffer.from(msg).toString('utf8'));
+          } catch {
+            return;
+          }
+
+          if (cmd?.command === 'refresh') {
+            void refreshNow();
+            return;
+          }
+
+          if (cmd?.type === 'setConfig') {
+            const VALID_KEYS = ['plan', 'tokenSource'];
+            const VALID_VALUES = {
+              plan: ['max', 'pro', 'team', 'enterprise', 'unknown'],
+              tokenSource: ['claude-code', 'opencode'],
+            };
+            const { key, value } = cmd;
+            if (!VALID_KEYS.includes(key)) {
+              logError(`[setConfig] rejected: invalid key=${key}`);
+              return;
             }
-          } catch {}
+            if (!VALID_VALUES[key].includes(value)) {
+              logError(`[setConfig] rejected: invalid value=${value} for key=${key}`);
+              return;
+            }
+            try {
+              const config = await readConfig();
+              config[key] = value;
+              await fsPromises.mkdir(`${process.env.HOME}/.config/ai-gauge`, { recursive: true });
+              const tmp = `${CONFIG_FILE}.tmp`;
+              await Bun.write(tmp, JSON.stringify(config, null, 2));
+              renameSync(tmp, CONFIG_FILE);
+              logError(`[setConfig] applied: ${key}=${value}`);
+              if (cachedData) broadcastToAll(cachedData);
+            } catch (err) {
+              logError(`[setConfig] write failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
         },
         close(ws) {
           connectedClients.delete(ws);

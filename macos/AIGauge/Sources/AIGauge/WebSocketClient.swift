@@ -29,6 +29,7 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
     @Published var lastUsagePayload: UsagePayload?
 
     var onNotify: ((NotifyPayload) -> Void)?
+    var onUsageUpdate: ((UsagePayload) -> Void)?
 
     private let session: URLSession
     private let decoder = JSONDecoder()
@@ -118,6 +119,7 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
         if let usage = try? decoder.decode(UsagePayload.self, from: data) {
             DispatchQueue.main.async {
                 self.lastUsagePayload = usage
+                self.onUsageUpdate?(usage)
             }
         }
     }

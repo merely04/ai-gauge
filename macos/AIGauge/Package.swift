@@ -12,7 +12,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "AIGauge",
-            path: "Sources/AIGauge"
+            path: "Sources/AIGauge",
+            exclude: ["Info.plist"]
         )
     ]
 )

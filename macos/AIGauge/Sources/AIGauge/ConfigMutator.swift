@@ -1,7 +1,8 @@
 import Foundation
+import Combine
 import Darwin
 
-final class ConfigMutator {
+final class ConfigMutator: ObservableObject {
     private weak var webSocketClient: WebSocketClient?
 
     init(ws: WebSocketClient) {
