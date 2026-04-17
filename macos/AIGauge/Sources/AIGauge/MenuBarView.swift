@@ -47,6 +47,10 @@ struct MenuBarView: View {
             Actions.restartServer()
         }
 
+        Button("Open Config") {
+            Actions.openConfig()
+        }
+
         Divider()
 
         Button("Quit AI Gauge") {

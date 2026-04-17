@@ -22,8 +22,8 @@ final class NotificationManager: ObservableObject {
         }
 
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            UserDefaults.standard.set(true, forKey: self.authorizationRequestedKey)
-            UserDefaults.standard.set(granted, forKey: "ai-gauge.notifications.authorization-granted")
+            self.defaults.set(true, forKey: self.authorizationRequestedKey)
+            self.defaults.set(granted, forKey: "ai-gauge.notifications.authorization-granted")
         }
     }
 
@@ -44,7 +44,7 @@ final class NotificationManager: ObservableObject {
                 trigger: nil
             )
 
-            UNUserNotificationCenter.current().add(request) { _ in
+            self.center.add(request) { _ in
                 FileHandle.standardError.write(Data("[notify] scheduled threshold=\(threshold) percentage=\(percentage)\n".utf8))
             }
         }

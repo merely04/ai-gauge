@@ -12,7 +12,7 @@ struct Actions {
     static func restartServer() {
         let uid = getuid()
         let process = Process()
-        process.launchPath = "/bin/launchctl"
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         process.arguments = ["kickstart", "-k", "gui/\(uid)/com.ai-gauge.server"]
         try? process.run()
     }

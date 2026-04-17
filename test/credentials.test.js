@@ -140,7 +140,7 @@ describe('Credential Reading', () => {
     expect(result).toBeNull();
   });
 
-  it('should return null when token is expired', async () => {
+  it('should return credentials even when token is expired (expiry validated by isTokenValid caller)', async () => {
     tempDir = createTempDir();
     const credsPath = join(tempDir, '.claude', '.credentials.json');
     ensureDir(join(tempDir, '.claude'));

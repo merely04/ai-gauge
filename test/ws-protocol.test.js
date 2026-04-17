@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 
+// Protocol contract tests: these tests verify WS message format compliance
+// using an isolated mock server on port 29876.
+// Integration tests against the real bin/ai-gauge-server are handled by F3 manual QA.
+
 const TEST_PORT = 29876;
 const TEST_URL = `ws://localhost:${TEST_PORT}`;
 

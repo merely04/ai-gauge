@@ -49,12 +49,6 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
         self.task = task
         task.resume()
 
-        DispatchQueue.main.async {
-            self.connected = true
-        }
-
-        log("[ws] connected\n")
-
         receiveTask = Task { [weak self] in
             await self?.receiveLoop()
         }
@@ -82,6 +76,11 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
         do {
             let message = try await task.receive()
             backoffDelay = 1.0
+
+            if !self.connected {
+                DispatchQueue.main.async { self.connected = true }
+                self.log("[ws] connected\n")
+            }
 
             switch message {
             case .string(let text):
