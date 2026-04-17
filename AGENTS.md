@@ -8,7 +8,7 @@ Compact guide for AI agents working in this repo. For user-facing docs see `READ
 - **Three bash scripts** (`bin/ai-gauge`, `bin/ai-gauge-config`, `bin/ai-gauge-menu`) — all start with `set -euo pipefail`. Respect that when editing.
 - **Plain JavaScript, no TypeScript.** No `tsconfig.json`, no build step, no bundler.
 - **Zero npm runtime deps.** `package.json` has no `dependencies`/`devDependencies`. The WebSocket server and client are hand-rolled. Do not add a dep without discussing.
-- **Linux-only**: `"os": ["linux"]` in `package.json`. Code assumes systemd user services, `$XDG_RUNTIME_DIR`, wl-copy, notify-send.
+- **Linux + macOS**: `"os": ["linux", "darwin"]` in `package.json`. Linux assumes systemd user services, `$XDG_RUNTIME_DIR`, wl-copy, notify-send. macOS uses launchd LaunchAgents, `$TMPDIR`, and a native Swift menubar app.
 - **Tests**: `bun test` for new modules (macOS port). No TypeScript, no test runner deps. Existing Linux code untested by design. Verification also manual: `systemctl --user status ai-gauge-server` and `journalctl --user -u ai-gauge-server -n 20`.
 
 ## Commands — there are no `npm run` targets
@@ -19,7 +19,8 @@ There is no test/lint/build. Interact via the five bin entries directly:
 |---|---|---|
 | `bin/ai-gauge` | bash | User-facing CLI: `setup` / `uninstall` / `status` / `version` |
 | `bin/ai-gauge-server` | Bun | WebSocket daemon on `ws://localhost:19876`; polls Anthropic `/api/oauth/usage` |
-| `bin/ai-gauge-waybar` | Bun | Thin WS client — emits waybar JSON to stdout |
+| `bin/ai-gauge-waybar` | Bun | Thin WS client — emits waybar JSON to stdout (Linux) |
+| `bin/ai-gauge-menubar` | Swift (binary) | Native macOS MenuBarExtra app — universal arm64+x86_64 (macOS) |
 | `bin/ai-gauge-menu` | bash | Right-click menu (uses `omarchy-launch-walker` UI + `wl-copy` + `notify-send`) |
 | `bin/ai-gauge-config` | bash | Settings CLI / walker UI; writes `~/.config/ai-gauge/config.json` and restarts the service |
 
@@ -62,6 +63,36 @@ State/config paths (never relocate without updating every script):
 - systemd unit: `~/.config/systemd/user/ai-gauge-server.service`
 - Waybar config patched: `~/.config/waybar/config.jsonc` + `~/.config/waybar/style.css`
 - StreamDock install path (Wine): `~/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins/com.ai-gauge.streamdock.sdPlugin`
+
+## macOS specifics
+
+macOS uses launchd instead of systemd and a native Swift app instead of Waybar.
+
+**Daemon management** (launchd equivalents):
+
+```bash
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/ai-gauge-server.plist   # start
+launchctl bootout  gui/$UID ~/Library/LaunchAgents/ai-gauge-server.plist    # stop
+launchctl list | grep ai-gauge                                               # status
+```
+
+**Plist templates** (substituted by `ai-gauge setup`, same `__BUN_PATH__` / `__SERVER_PATH__` placeholders):
+
+- `lib/ai-gauge-server.plist.template` — LaunchAgent for the Bun server
+- `lib/ai-gauge-menubar.plist.template` — LaunchAgent for the Swift menubar app
+
+**Swift app**:
+
+- Source lives in `macos/AIGauge/`
+- Compiled binary ships as `bin/ai-gauge-menubar` (universal arm64+x86_64)
+- Connects to `ws://localhost:19876` and renders usage via MenuBarExtra
+- Rebuild with `xcodebuild` from `macos/`; then `lipo -info bin/ai-gauge-menubar` to verify universal slice
+
+**macOS state paths**:
+
+- Runtime state: `$TMPDIR/ai-gauge/usage.json` (vs `$XDG_RUNTIME_DIR` on Linux)
+- Logs: `~/Library/Logs/ai-gauge/` (server and menubar app write here)
+- LaunchAgent plists installed to: `~/Library/LaunchAgents/`
 
 ## WebSocket Protocol
 
@@ -118,8 +149,10 @@ Both setup and uninstall are idempotent — they guard with `grep -q` before pat
 
 Not npm packages — system binaries. None are declared anywhere; if you add a new one, document it in `docs/LLM_INSTALL.md` under Prerequisites.
 
-- **Required**: `bun`, `bash`, `jq`, `python3` (setup only), `systemctl` (user), `sed`, `readlink`.
-- **Desktop integration**: `notify-send` (libnotify), `wl-copy` (wl-clipboard), `waybar`.
+- **Required (all platforms)**: `bun`, `bash`, `jq`, `sed`, `readlink`.
+- **Required (Linux)**: `python3` (setup only), `systemctl` (user).
+- **Required (macOS)**: `launchctl`. `plutil` and `codesign` are used when rebuilding the Swift binary.
+- **Desktop integration (Linux)**: `notify-send` (libnotify), `wl-copy` (wl-clipboard), `waybar`.
 - **Optional, Omarchy distro**: `omarchy-launch-walker` (menu/settings UI), `omarchy-restart-waybar`. Scripts degrade gracefully when these are missing.
 - **Optional, StreamDock path**: Wine + Fifine Control Deck + StreamDock app. `run.bat` hardcodes `C:\Program Files (x86)\fifine Control Deck\node\node20.exe` and sets `NODE_SKIP_PLATFORM_CHECK=1` — do not change this path, it is the Fifine-bundled Node the plugin host uses.
 
