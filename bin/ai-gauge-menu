@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/bash-helpers.sh"
+
 STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/ai-gauge"
 mkdir -p "$STATE_DIR"
 
@@ -18,6 +21,12 @@ build_summary() {
     printf '5-hour: %s%% (resets: %s)\nWeekly: %s%% (resets: %s)' \
         "${five_pct%.*}" "$five_reset" "${seven_pct%.*}" "$seven_reset"
 }
+
+# macOS: menu handled by Swift app
+if is_macos; then
+    echo "Menu options available via menubar icon right-click (AI Gauge in menu bar)"
+    exit 0
+fi
 
 # Menu
 choice=$(printf '%s\n' \

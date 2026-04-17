@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Resolve package directory (follows symlinks from global bin)
-SELF="$(readlink -f "$0")"
+# Resolve package directory (follows symlinks from global bin).
+# On macOS 12.3+ readlink supports -f; fallback to python3 for older systems / safety.
+if readlink -f "$0" >/dev/null 2>&1; then
+    SELF="$(readlink -f "$0")"
+else
+    SELF="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$0")"
+fi
 BIN_DIR="$(dirname "$SELF")"
 PACKAGE_DIR="$(dirname "$BIN_DIR")"
 LIB_DIR="$PACKAGE_DIR/lib"
+
+# shellcheck source=../lib/bash-helpers.sh
+source "$LIB_DIR/bash-helpers.sh"
 
 WAYBAR_CONFIG="$HOME/.config/waybar/config.jsonc"
 WAYBAR_STYLE="$HOME/.config/waybar/style.css"
@@ -36,11 +44,129 @@ cmd_version() {
 }
 
 cmd_status() {
+    if is_macos; then
+        local UID_VAL
+        UID_VAL=$(id -u)
+        
+        echo "=== ai-gauge status (macOS) ==="
+        echo ""
+        echo "Server agent (com.ai-gauge.server):"
+        launchctl print "gui/$UID_VAL/com.ai-gauge.server" 2>/dev/null | grep -E "state|pid|last exit" || echo "  (not loaded)"
+        echo ""
+        echo "Menubar agent (com.ai-gauge.menubar):"
+        launchctl print "gui/$UID_VAL/com.ai-gauge.menubar" 2>/dev/null | grep -E "state|pid|last exit" || echo "  (not loaded)"
+        echo ""
+        echo "State file:"
+        jq . "${TMPDIR:-/tmp}/ai-gauge/usage.json" 2>/dev/null || echo "  (no state)"
+        echo ""
+        echo "Recent server logs:"
+        tail -n 5 "$HOME/Library/Logs/ai-gauge/server.log" 2>/dev/null || echo "  (no logs)"
+        return 0
+    fi
+    
     systemctl --user status ai-gauge-server --no-pager 2>&1 || true
+}
+
+cmd_setup_macos() {
+    local BUN_PATH
+    BUN_PATH=$(command -v bun 2>/dev/null || true)
+    if [[ -z "$BUN_PATH" ]]; then
+        echo "Error: bun not found in PATH. Install bun first: https://bun.sh"
+        exit 1
+    fi
+    BUN_PATH=$(resolve_path "$BUN_PATH")
+    echo "  Found bun at $BUN_PATH"
+
+    local SERVER_PATH
+    SERVER_PATH=$(command -v ai-gauge-server 2>/dev/null || true)
+    if [[ -z "$SERVER_PATH" ]]; then
+        SERVER_PATH="$BIN_DIR/ai-gauge-server"
+    fi
+    if [[ ! -f "$SERVER_PATH" ]]; then
+        echo "Error: ai-gauge-server not found (looked in PATH and $BIN_DIR)"
+        exit 1
+    fi
+    SERVER_PATH=$(resolve_path "$SERVER_PATH")
+    echo "  Found ai-gauge-server at $SERVER_PATH"
+
+    local BINARY_PATH="$BIN_DIR/ai-gauge-menubar"
+    local LOG_DIR="$HOME/Library/Logs/ai-gauge"
+    local LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
+    local UID_VAL
+    UID_VAL=$(id -u)
+
+    # Ensure menubar binary exists (build from Swift sources if missing)
+    if [[ ! -f "$BINARY_PATH" ]]; then
+        echo "  Menubar binary missing; building..."
+        if [[ -x "$PACKAGE_DIR/scripts/build-macos-binary.sh" ]]; then
+            bash "$PACKAGE_DIR/scripts/build-macos-binary.sh"
+        else
+            echo "Error: build script not found at $PACKAGE_DIR/scripts/build-macos-binary.sh"
+            exit 1
+        fi
+    fi
+
+    # Remove Gatekeeper quarantine (safe if attribute absent)
+    xattr -d com.apple.quarantine "$BINARY_PATH" 2>/dev/null || true
+    echo "  Cleared quarantine attribute on $BINARY_PATH"
+
+    # Create default config if missing (shared with Linux path)
+    local CONFIG_DIR="$HOME/.config/ai-gauge"
+    local CONFIG_FILE="$CONFIG_DIR/config.json"
+    mkdir -p "$CONFIG_DIR"
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo '{"tokenSource": "claude-code", "plan": "unknown"}' > "$CONFIG_FILE"
+        echo "  Created default config → $CONFIG_FILE"
+    else
+        echo "  Config already exists (skipped)"
+    fi
+
+    # Ensure required directories
+    mkdir -p "$LOG_DIR"
+    mkdir -p "$LAUNCH_AGENTS"
+
+    # Generate server plist from template
+    local SERVER_PLIST="$LAUNCH_AGENTS/com.ai-gauge.server.plist"
+    sed -e "s|__BUN_PATH__|$BUN_PATH|g" \
+        -e "s|__SERVER_PATH__|$SERVER_PATH|g" \
+        -e "s|__LOG_DIR__|$LOG_DIR|g" \
+        -e "s|__HOME__|$HOME|g" \
+        "$LIB_DIR/ai-gauge-server.plist.template" > "$SERVER_PLIST"
+    echo "  Installed $SERVER_PLIST"
+
+    # Generate menubar plist from template
+    local MENUBAR_PLIST="$LAUNCH_AGENTS/com.ai-gauge.menubar.plist"
+    sed -e "s|__MENUBAR_BINARY_PATH__|$BINARY_PATH|g" \
+        -e "s|__LOG_DIR__|$LOG_DIR|g" \
+        -e "s|__HOME__|$HOME|g" \
+        "$LIB_DIR/ai-gauge-menubar.plist.template" > "$MENUBAR_PLIST"
+    echo "  Installed $MENUBAR_PLIST"
+
+    # Validate plists post-substitution
+    plutil -lint "$SERVER_PLIST"
+    plutil -lint "$MENUBAR_PLIST"
+
+    # Bootstrap LaunchAgents (idempotent: bootout first, then bootstrap).
+    # bootout may return non-zero if agent isn't already loaded — ignore.
+    launchctl bootout "gui/${UID_VAL}/com.ai-gauge.server" 2>/dev/null || true
+    launchctl bootstrap "gui/${UID_VAL}" "$SERVER_PLIST"
+    echo "  Bootstrapped com.ai-gauge.server"
+
+    launchctl bootout "gui/${UID_VAL}/com.ai-gauge.menubar" 2>/dev/null || true
+    launchctl bootstrap "gui/${UID_VAL}" "$MENUBAR_PLIST"
+    echo "  Bootstrapped com.ai-gauge.menubar"
+
+    echo "ai-gauge setup complete (macOS)"
+    echo "Both LaunchAgents registered. Menubar icon should appear shortly."
 }
 
 cmd_setup() {
     echo "Setting up ai-gauge..."
+
+    if is_macos; then
+        cmd_setup_macos
+        return 0
+    fi
 
     # Resolve bun path
     local BUN_PATH
@@ -193,6 +319,28 @@ CSS
 
 cmd_uninstall() {
     echo "Uninstalling ai-gauge..."
+
+    if is_macos; then
+        local UID_VAL
+        UID_VAL=$(id -u)
+        local LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
+
+        # Bootout agents (graceful if not loaded)
+        launchctl bootout "gui/$UID_VAL/com.ai-gauge.server" 2>/dev/null || true
+        launchctl bootout "gui/$UID_VAL/com.ai-gauge.menubar" 2>/dev/null || true
+
+        # Remove plist files
+        rm -f "$LAUNCH_AGENTS/com.ai-gauge.server.plist"
+        rm -f "$LAUNCH_AGENTS/com.ai-gauge.menubar.plist"
+
+        # Clean state dir (macOS TMPDIR)
+        rm -rf "${TMPDIR:-/tmp}/ai-gauge"
+
+        # Preserve config: ~/.config/ai-gauge/config.json is NOT deleted
+
+        echo "ai-gauge uninstalled (macOS)"
+        return 0
+    fi
 
     # Stop and disable systemd service first
     systemctl --user stop ai-gauge-server 2>/dev/null || true

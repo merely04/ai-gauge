@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/bash-helpers.sh"
+
 CONFIG_DIR="$HOME/.config/ai-gauge"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 
@@ -51,6 +54,14 @@ if [[ "${1:-}" == "set" ]]; then
 fi
 
 # Interactive mode (walker UI)
+# Skip walker UI on macOS
+if is_macos; then
+    echo "Config UI available via menubar right-click submenu."
+    echo "For CLI use: ai-gauge-config set <key> <value>"
+    echo "  Keys: plan (max|pro|team|enterprise|unknown), tokenSource (claude-code|opencode)"
+    exit 0
+fi
+
 current_source=$(get_field tokenSource)
 current_plan=$(get_field plan)
 
