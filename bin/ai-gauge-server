@@ -1,13 +1,15 @@
 #!/usr/bin/env bun
 
+import { systemNotify } from '../lib/notify.js';
 import { renameSync } from 'node:fs';
 import { promises as fsPromises } from 'node:fs';
 import net from 'node:net';
 
 const CREDS_FILE = `${process.env.HOME}/.claude/.credentials.json`;
-const OPENCODE_AUTH_FILE = `${process.env.HOME}/.local/share/opencode/auth.json`;
+const OPENCODE_AUTH_FILE_PRIMARY = `${process.env.HOME}/.local/share/opencode/auth.json`;
+const OPENCODE_AUTH_FILE_MAC = `${process.env.HOME}/Library/Application Support/opencode/auth.json`;
 const CONFIG_FILE = `${process.env.HOME}/.config/ai-gauge/config.json`;
-const STATE_DIR = `${process.env.XDG_RUNTIME_DIR || '/tmp'}/ai-gauge`;
+const STATE_DIR = `${process.platform === 'darwin' ? (process.env.TMPDIR || '/tmp') : (process.env.XDG_RUNTIME_DIR || '/tmp')}/ai-gauge`;
 const WS_PORT = 19876;
 const POLL_INTERVAL = 60_000;
 const BACKOFF_INTERVAL = 300_000;
@@ -58,19 +60,23 @@ async function readClaudeCodeCredentials() {
 }
 
 async function readOpenCodeCredentials() {
-  try {
-    const data = await Bun.file(OPENCODE_AUTH_FILE).json();
-    const anthropic = data?.anthropic;
-    if (!anthropic?.access) return null;
-    return {
-      token: anthropic.access,
-      expiresAt: anthropic.expires,
-      subscriptionType: 'unknown',
-    };
-  } catch {
-    logError('no opencode credentials');
-    return null;
+  for (const path of [OPENCODE_AUTH_FILE_PRIMARY, OPENCODE_AUTH_FILE_MAC]) {
+    try {
+      const data = await Bun.file(path).json();
+      const auth = data?.anthropic;
+      if (!auth?.access) continue;
+      return {
+        token: auth.access,
+        expiresAt: auth.expires ?? Infinity,
+        subscriptionType: 'unknown',
+      };
+    } catch {
+      continue;
+    }
   }
+
+  logError('no opencode credentials');
+  return null;
 }
 
 async function readCredentials() {
@@ -153,26 +159,17 @@ function broadcastToAll(data) {
   }
 }
 
-function checkNotification() {
+async function checkNotification() {
   if (!cachedData?.five_hour) return;
   const fiveInt = Math.round(Number(cachedData.five_hour.utilization) || 0);
 
   if (fiveInt >= 80) {
     if (!alerted80) {
       const remaining = formatDuration(cachedData.five_hour.resets_at);
-      Bun.spawn([
-        'notify-send',
-        '-u',
-        'critical',
-        '-t',
-        '10000',
-        '-a',
-        'Claude Code',
-        `5-hour limit at ${fiveInt}%`,
-        `Resets in ${remaining}`,
-      ], {
-        stdout: 'ignore',
-        stderr: 'ignore',
+      await systemNotify({
+        title: 'AI Gauge',
+        message: `5-hour limit at ${fiveInt}%\nResets in ${remaining}`,
+        urgency: 'critical',
       });
       alerted80 = true;
     }
@@ -230,7 +227,7 @@ async function fetchAndHandleBroadcast() {
     if (success) {
       currentInterval = POLL_INTERVAL;
       broadcastToAll(cachedData);
-      checkNotification();
+      await checkNotification();
     } else {
       currentInterval = BACKOFF_INTERVAL;
     }
@@ -256,7 +253,7 @@ async function refreshNow() {
     };
     await atomicWrite(cachedData);
     broadcastToAll(cachedData);
-    checkNotification();
+    await checkNotification();
   }
 }
 
