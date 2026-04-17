@@ -6,7 +6,7 @@
 	<string>com.ai-gauge.menubar</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>__MENUBAR_BINARY_PATH__</string>
+		<string>__MENUBAR_APP_EXEC__</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

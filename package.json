@@ -19,6 +19,7 @@
     "bin/",
     "lib/",
     "bin/ai-gauge-menubar",
+    "bin/AIGauge.app/**",
     "lib/ai-gauge-server.plist.template",
     "lib/ai-gauge-menubar.plist.template",
     "README.md",

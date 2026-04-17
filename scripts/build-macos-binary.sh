@@ -26,14 +26,35 @@ lipo -create \
 
 chmod +x "$REPO_ROOT/bin/ai-gauge-menubar"
 
-echo "Ad-hoc signing..."
+echo "Ad-hoc signing raw binary..."
 codesign --force --sign - "$REPO_ROOT/bin/ai-gauge-menubar"
 
 echo "Removing quarantine attribute..."
 xattr -d com.apple.quarantine "$REPO_ROOT/bin/ai-gauge-menubar" 2>/dev/null || true
 
+echo "Wrapping binary in .app bundle..."
+APP_DIR="$REPO_ROOT/bin/AIGauge.app"
+rm -rf "$APP_DIR"
+mkdir -p "$APP_DIR/Contents/MacOS"
+mkdir -p "$APP_DIR/Contents/Resources"
+
+cp "$REPO_ROOT/bin/ai-gauge-menubar" "$APP_DIR/Contents/MacOS/AIGauge"
+chmod +x "$APP_DIR/Contents/MacOS/AIGauge"
+
+cp "$REPO_ROOT/macos/AIGauge/Sources/AIGauge/Info.plist" "$APP_DIR/Contents/Info.plist"
+plutil -lint "$APP_DIR/Contents/Info.plist"
+
+echo "Ad-hoc signing .app bundle..."
+codesign --force --deep --sign - "$APP_DIR"
+
+xattr -dr com.apple.quarantine "$APP_DIR" 2>/dev/null || true
+
 echo "Verifying..."
 lipo -info "$REPO_ROOT/bin/ai-gauge-menubar"
-codesign -dv "$REPO_ROOT/bin/ai-gauge-menubar" 2>&1 | grep -i "adhoc\|Signature" || true
+lipo -info "$APP_DIR/Contents/MacOS/AIGauge"
+codesign -dv "$APP_DIR" 2>&1 | grep -i "adhoc\|Signature\|Identifier" || true
 
-echo "Done! Universal binary at: $REPO_ROOT/bin/ai-gauge-menubar"
+echo "Done!"
+echo "  Raw binary:     $REPO_ROOT/bin/ai-gauge-menubar"
+echo "  App bundle:     $APP_DIR"
+echo "  App executable: $APP_DIR/Contents/MacOS/AIGauge"

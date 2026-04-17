@@ -17,30 +17,22 @@ jobs:
       - name: Swift version
         run: swift --version
 
-      - name: Build arm64
-        run: swift build --package-path macos/AIGauge -c release --arch arm64
-
-      - name: Build x86_64
-        run: swift build --package-path macos/AIGauge -c release --arch x86_64
-
-      - name: Create universal binary
-        run: |
-          lipo -create \
-            -output bin/ai-gauge-menubar \
-            macos/AIGauge/.build/arm64-apple-macosx/release/AIGauge \
-            macos/AIGauge/.build/x86_64-apple-macosx/release/AIGauge
-
-      - name: Ad-hoc sign
-        run: codesign --force --sign - bin/ai-gauge-menubar
+      - name: Build universal binary and .app bundle
+        run: bash scripts/build-macos-binary.sh
 
       - name: Verify universal binary
-        run: lipo -info bin/ai-gauge-menubar | grep -qE "arm64.*x86_64|x86_64.*arm64"
+        run: lipo -info bin/AIGauge.app/Contents/MacOS/AIGauge | grep -qE "arm64.*x86_64|x86_64.*arm64"
+
+      - name: Verify bundle Info.plist
+        run: plutil -lint bin/AIGauge.app/Contents/Info.plist
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ai-gauge-menubar
-          path: bin/ai-gauge-menubar
+          path: |
+            bin/ai-gauge-menubar
+            bin/AIGauge.app/**
 
   publish:
     needs: build-macos-binary
@@ -61,8 +53,10 @@ jobs:
           name: ai-gauge-menubar
           path: bin/
 
-      - name: Make binary executable
-        run: chmod +x bin/ai-gauge-menubar
+      - name: Make binaries executable
+        run: |
+          chmod +x bin/ai-gauge-menubar
+          chmod +x bin/AIGauge.app/Contents/MacOS/AIGauge
 
       - run: npm publish
         env:

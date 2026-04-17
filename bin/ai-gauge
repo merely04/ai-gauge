@@ -89,16 +89,16 @@ cmd_setup_macos() {
     SERVER_PATH=$(resolve_path "$SERVER_PATH")
     echo "  Found ai-gauge-server at $SERVER_PATH"
 
-    local BINARY_PATH="$BIN_DIR/ai-gauge-menubar"
+    local APP_BUNDLE="$BIN_DIR/AIGauge.app"
+    local APP_EXEC="$APP_BUNDLE/Contents/MacOS/AIGauge"
     local LOG_DIR="$HOME/Library/Logs/ai-gauge"
     local LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
     local UID_VAL
     UID_VAL=$(id -u)
 
-    # Ensure menubar binary exists (build from Swift sources if missing)
-    if [[ ! -f "$BINARY_PATH" ]]; then
-        echo "  Menubar binary missing; building..."
-        if [[ -x "$PACKAGE_DIR/scripts/build-macos-binary.sh" ]]; then
+    if [[ ! -x "$APP_EXEC" ]]; then
+        echo "  Menubar app bundle missing; building..."
+        if [[ -f "$PACKAGE_DIR/scripts/build-macos-binary.sh" ]]; then
             bash "$PACKAGE_DIR/scripts/build-macos-binary.sh"
         else
             echo "Error: build script not found at $PACKAGE_DIR/scripts/build-macos-binary.sh"
@@ -106,9 +106,8 @@ cmd_setup_macos() {
         fi
     fi
 
-    # Remove Gatekeeper quarantine (safe if attribute absent)
-    xattr -d com.apple.quarantine "$BINARY_PATH" 2>/dev/null || true
-    echo "  Cleared quarantine attribute on $BINARY_PATH"
+    xattr -dr com.apple.quarantine "$APP_BUNDLE" 2>/dev/null || true
+    echo "  Cleared quarantine attribute on $APP_BUNDLE"
 
     # Create default config if missing (shared with Linux path)
     local CONFIG_DIR="$HOME/.config/ai-gauge"
@@ -136,7 +135,7 @@ cmd_setup_macos() {
 
     # Generate menubar plist from template
     local MENUBAR_PLIST="$LAUNCH_AGENTS/com.ai-gauge.menubar.plist"
-    sed -e "s|__MENUBAR_BINARY_PATH__|$BINARY_PATH|g" \
+    sed -e "s|__MENUBAR_APP_EXEC__|$APP_EXEC|g" \
         -e "s|__LOG_DIR__|$LOG_DIR|g" \
         -e "s|__HOME__|$HOME|g" \
         "$LIB_DIR/ai-gauge-menubar.plist.template" > "$MENUBAR_PLIST"
