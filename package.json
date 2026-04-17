@@ -18,9 +18,16 @@
   "files": [
     "bin/",
     "lib/",
+    "bin/ai-gauge-menubar",
+    "lib/ai-gauge-server.plist.template",
+    "lib/ai-gauge-menubar.plist.template",
     "README.md",
     "docs/"
   ],
+  "scripts": {
+    "test": "bun test",
+    "test:watch": "bun test --watch"
+  },
   "keywords": [
     "waybar",
     "waybar-module",
@@ -44,5 +51,5 @@
   "engines": {
     "bun": ">=1.0.0"
   },
-  "os": ["linux"]
+  "os": ["linux", "darwin"]
 }

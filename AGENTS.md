@@ -7,9 +7,9 @@ Compact guide for AI agents working in this repo. For user-facing docs see `READ
 - **Runtime: Bun (not Node)** — `bin/ai-gauge-server` and `bin/ai-gauge-waybar` use `#!/usr/bin/env bun` and Bun-native APIs (`Bun.file`, `Bun.serve`, `Bun.spawn`). Do not rewrite as Node/ESM.
 - **Three bash scripts** (`bin/ai-gauge`, `bin/ai-gauge-config`, `bin/ai-gauge-menu`) — all start with `set -euo pipefail`. Respect that when editing.
 - **Plain JavaScript, no TypeScript.** No `tsconfig.json`, no build step, no bundler.
-- **Zero npm runtime deps.** `package.json` has no `dependencies`/`devDependencies`/`scripts`. The WebSocket server and client are hand-rolled. Do not add a dep without discussing.
+- **Zero npm runtime deps.** `package.json` has no `dependencies`/`devDependencies`. The WebSocket server and client are hand-rolled. Do not add a dep without discussing.
 - **Linux-only**: `"os": ["linux"]` in `package.json`. Code assumes systemd user services, `$XDG_RUNTIME_DIR`, wl-copy, notify-send.
-- **No tests**, no linter, no formatter config. Verification is manual: `systemctl --user status ai-gauge-server` and `journalctl --user -u ai-gauge-server -n 20`.
+- **Tests**: `bun test` for new modules (macOS port). No TypeScript, no test runner deps. Existing Linux code untested by design. Verification also manual: `systemctl --user status ai-gauge-server` and `journalctl --user -u ai-gauge-server -n 20`.
 
 ## Commands — there are no `npm run` targets
 
@@ -29,6 +29,7 @@ Manual sanity checks after editing:
 systemctl --user restart ai-gauge-server
 journalctl --user -u ai-gauge-server -n 30 --no-pager
 ai-gauge-waybar          # prints one waybar JSON line per server broadcast; Ctrl-C to stop
+bun test                 # runs test suite for new modules
 ```
 
 ## Runtime architecture
@@ -61,6 +62,43 @@ State/config paths (never relocate without updating every script):
 - systemd unit: `~/.config/systemd/user/ai-gauge-server.service`
 - Waybar config patched: `~/.config/waybar/config.jsonc` + `~/.config/waybar/style.css`
 - StreamDock install path (Wine): `~/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins/com.ai-gauge.streamdock.sdPlugin`
+
+## WebSocket Protocol
+
+Port `19876` (hardcoded). All clients connect to `ws://localhost:19876`.
+
+### Existing broadcast (server → all clients, every poll)
+
+```json
+{"text":"✦ 44% 2h31m · 15%w","tooltip":"...","percentage":44,"class":"warning"}
+```
+
+`class` values: `""` (normal), `"warning"` (50-79%), `"critical"` (≥80%), `"waiting"` (no server).
+
+### New: notify message (server → all clients, at threshold transitions)
+
+Broadcast when usage crosses 80% or 95% threshold (`pending=false → true`). Resets below 50%.
+
+```json
+{"type":"notify","threshold":80,"percentage":82,"message":"Usage at 80%, ~N days remaining"}
+```
+
+- `threshold`: `80` or `95`
+- `percentage`: actual current value
+- `message`: human-readable string for notification body
+
+### New: setConfig command (client → server)
+
+Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, writes atomically, re-broadcasts.
+
+```json
+{"type":"setConfig","key":"plan","value":"team"}
+{"type":"setConfig","key":"tokenSource","value":"opencode"}
+```
+
+- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`; `tokenSource` → `claude-code`, `opencode`
+- Server **rejects** any value outside the canonical enum (logs warning, config unchanged)
+- Backward compatibility: existing `{text, tooltip, percentage, class}` broadcast format stays unchanged
 
 ## Setup / uninstall — non-obvious details
 
