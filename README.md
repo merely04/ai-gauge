@@ -11,7 +11,7 @@ Real-time Claude Code usage monitor. Tracks 5-hour and weekly API rate limits wi
 - **Waybar module** (Linux) — live 5-hour %, weekly %, reset countdown in your status bar
 - **Native menubar app** (macOS) — Swift MenuBarExtra, same data in your menu bar
 - **Desktop notifications** — alert at 80% usage, auto-clear below 50%
-- **Right-click menu** — refresh, copy stats, open settings
+- **Right-click menu** — refresh, copy stats, change plan / token source with checkmarks (macOS), open settings
 - **StreamDock plugin** — usage stats on a physical key (Fifine AmpliGame D6)
 - **Multiple token sources** — Claude Code CLI or OpenCode
 - **WebSocket architecture** — one server broadcasts to all clients in real time
@@ -59,9 +59,9 @@ Weekly:  15%  (resets in 6d 17h 54m)
 Sonnet:  0%
 ───────────────
 Extra: $171.22/$200 (86%)
-───────────────
-Plan: max
 ```
+
+The current plan and token source are reflected as **checkmarks in the submenu** (macOS) and in the Linux tooltip footer.
 
 ![tooltip](assets/tooltip.png)
 
@@ -69,12 +69,41 @@ Plan: max
 
 | State | Color | Condition |
 |-------|-------|-----------|
-| normal | dimmed | < 50% |
+| normal | system text color | < 50% |
 | warning | yellow | 50-79% |
 | critical | red | >= 80% (sends desktop notification once) |
 | waiting | very dim | Connecting to server (starting up or server down) |
 
-**Menu** (click): Refresh now, copy usage, raw JSON, settings.
+## macOS — Native Menu Bar
+
+Same data, native Mac UI. Lives in the menu bar (no Dock icon thanks to `LSUIElement`).
+
+**In the menu bar:**
+
+![macOS menu bar](assets/macos-menubar.png)
+
+**Click to open the full menu** — usage breakdown on top, actions below:
+
+![macOS menu](assets/macos-menu.png)
+
+**Submenus** show current selection with a checkmark — change plan or token source on the fly:
+
+![macOS submenu](assets/macos-submenu.png)
+
+**About panel** — standard macOS About with version, license, GitHub link:
+
+![macOS about](assets/macos-about.png)
+
+**Menu** (right-click on Linux, click on macOS):
+
+- Copy usage summary (clipboard)
+- Change plan ▸ (max / pro / team / enterprise / unknown — current marked with ✓)
+- Change token source ▸ (Claude Code / OpenCode — current marked with ✓)
+- Refresh now
+- Restart server
+- Reveal Config in Finder (macOS) / Open settings (Linux)
+- About AI Gauge (macOS — shows version, license, GitHub link)
+- Quit
 
 ## Configuration
 
@@ -89,7 +118,7 @@ Config file: `~/.config/ai-gauge/config.json`
 | `tokenSource` | `claude-code` (default), `opencode` | OAuth token source |
 | `plan` | `max`, `pro`, `team`, `enterprise`, `unknown` | Subscription plan (shown in tooltip) |
 
-Change settings via UI (menu → ⚙ Settings) or CLI:
+Change settings via menu (macOS submenu / Linux walker UI) or CLI (works on both):
 
 ```bash
 ai-gauge-config set tokenSource opencode
@@ -132,7 +161,12 @@ The server writes `usage.json` atomically to `$XDG_RUNTIME_DIR/ai-gauge/` on Lin
 | `lib/ai-gauge-server.service` | systemd user service unit template (Linux) |
 | `lib/ai-gauge-server.plist.template` | launchd LaunchAgent plist template (macOS) |
 | `lib/ai-gauge-menubar.plist.template` | launchd plist for the menubar app (macOS) |
-| `macos/AIGauge/` | Swift source for the native menubar app |
+| `bin/AIGauge.app/` | Pre-built macOS app bundle (universal arm64+x86_64, ad-hoc signed) |
+| `macos/AIGauge/` | Swift source for the native menubar app (SPM project) |
+| `scripts/build-macos-binary.sh` | Reproducible build: `swift build` + `lipo` + `codesign --deep` + bundle wrap |
+| `scripts/generate-icon.sh` + `generate-icon.swift` | Procedural app icon renderer (Swift Core Graphics → `.icns`) |
+| `lib/notify.js` | Cross-platform notification helper (notify-send on Linux, no-op on macOS) |
+| `lib/bash-helpers.sh` | Portable `is_macos`, `resolve_path`, `sed_inplace` for bash scripts |
 | `lib/streamdock-plugin/` | StreamDock (Fifine D6) button plugin |
 
 Both setup and uninstall are idempotent.
