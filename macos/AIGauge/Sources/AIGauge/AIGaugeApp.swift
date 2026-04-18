@@ -45,12 +45,8 @@ struct AIGaugeApp: App {
                 .environmentObject(usageModel)
                 .environmentObject(configMutator)
         } label: {
-            Label {
-                Text(usageModel.text.isEmpty ? "--" : usageModel.text)
-                    .foregroundColor(urgencyColor(usageModel.urgency))
-            } icon: {
-                Image(systemName: "gauge.medium")
-            }
+            Text(usageModel.text.isEmpty ? "--" : usageModel.text)
+                .foregroundColor(urgencyColor(usageModel.urgency))
         }
         .menuBarExtraStyle(.menu)
     }
