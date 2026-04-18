@@ -360,7 +360,7 @@ function createServer() {
             return;
           }
 
-          if (cmd?.command === 'refresh') {
+          if (cmd?.type === 'refresh') {
             void refreshNow();
             return;
           }

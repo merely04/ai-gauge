@@ -35,8 +35,6 @@ struct AIGaugeApp: App {
 
         ws.connect()
         notif.requestAuthorization()
-
-        ConfigMutator.runSetPlanTestModeIfNeeded(using: ws)
     }
 
     var body: some Scene {

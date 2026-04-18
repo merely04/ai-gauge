@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import Darwin
 
 final class ConfigMutator: ObservableObject {
     private weak var webSocketClient: WebSocketClient?
@@ -19,15 +18,6 @@ final class ConfigMutator: ObservableObject {
 
     func refresh() {
         webSocketClient?.send("{\"type\":\"refresh\"}")
-    }
-
-    static func runSetPlanTestModeIfNeeded(using webSocketClient: WebSocketClient) {
-        guard ProcessInfo.processInfo.environment["AIGAUGE_TEST_MODE"] == "setplan" else { return }
-        let mutator = ConfigMutator(ws: webSocketClient)
-        mutator.setPlan("team")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            exit(0)
-        }
     }
 
     private static func escape(_ value: String) -> String {
