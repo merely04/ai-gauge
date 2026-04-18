@@ -16,6 +16,7 @@ struct MenuBarView: View {
         Text(usageModel.tooltip.isEmpty ? "Connecting to ai-gauge-server..." : usageModel.tooltip)
             .foregroundStyle(urgencyColor)
             .font(.system(size: 13, weight: .medium))
+            .fixedSize(horizontal: false, vertical: true)
 
         Divider()
 
