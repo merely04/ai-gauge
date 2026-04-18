@@ -13,10 +13,10 @@ struct MenuBarView: View {
     ]
 
     var body: some View {
-        Text(usageModel.tooltip.isEmpty ? "Connecting to ai-gauge-server..." : usageModel.tooltip)
-            .foregroundStyle(urgencyColor)
-            .font(.system(size: 13, weight: .medium))
-            .fixedSize(horizontal: false, vertical: true)
+        ForEach(Array(tooltipLines.enumerated()), id: \.offset) { _, line in
+            Text(line)
+                .foregroundStyle(urgencyColor)
+        }
 
         Divider()
 
@@ -95,6 +95,13 @@ struct MenuBarView: View {
                 }
             }
         ))
+    }
+
+    private var tooltipLines: [String] {
+        if usageModel.tooltip.isEmpty {
+            return ["Connecting to ai-gauge-server..."]
+        }
+        return usageModel.tooltip.components(separatedBy: "\n")
     }
 
     private var urgencyColor: Color {
