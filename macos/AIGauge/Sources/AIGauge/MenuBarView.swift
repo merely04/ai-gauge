@@ -106,7 +106,7 @@ struct MenuBarView: View {
 
     private var urgencyColor: Color {
         switch usageModel.urgency {
-        case .ok: return .primary
+        case .ok: return Color(nsColor: .labelColor)
         case .warning: return .orange
         case .critical: return .red
         }
