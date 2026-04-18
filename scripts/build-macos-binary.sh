@@ -41,6 +41,8 @@ mkdir -p "$APP_DIR/Contents/Resources"
 cp "$REPO_ROOT/bin/ai-gauge-menubar" "$APP_DIR/Contents/MacOS/AIGauge"
 chmod +x "$APP_DIR/Contents/MacOS/AIGauge"
 
+cp "$REPO_ROOT/macos/AIGauge/.build/release/AIGauge_AIGauge.bundle/Credits.rtf" "$APP_DIR/Contents/Resources/Credits.rtf"
+
 cp "$REPO_ROOT/macos/AIGauge/Sources/AIGauge/Info.plist" "$APP_DIR/Contents/Info.plist"
 plutil -lint "$APP_DIR/Contents/Info.plist"
 

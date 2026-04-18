@@ -126,13 +126,16 @@ async function atomicWrite(data) {
 
 async function loadCachedDataFromDisk(fallbackPlan) {
   try {
+    const config = await readConfig();
+    const plan = config.plan && config.plan !== 'unknown' ? config.plan : fallbackPlan;
     const data = await Bun.file(`${STATE_DIR}/usage.json`).json();
     if (data?.five_hour) {
       cachedData = {
         ...data,
         meta: {
-          plan: data?.meta?.plan ?? fallbackPlan,
+          plan: data?.meta?.plan ?? plan ?? 'unknown',
           fetchedAt: data?.meta?.fetchedAt ?? new Date().toISOString(),
+          tokenSource: data?.meta?.tokenSource ?? config.tokenSource,
         },
       };
       return true;
@@ -243,6 +246,7 @@ async function fetchUsage() {
       meta: {
         plan: plan ?? 'unknown',
         fetchedAt: new Date().toISOString(),
+        tokenSource: config.tokenSource,
       },
     };
 
@@ -384,7 +388,17 @@ function createServer() {
               await Bun.write(tmp, JSON.stringify(config, null, 2));
               renameSync(tmp, CONFIG_FILE);
               logError(`[setConfig] applied: ${key}=${value}`);
-              if (cachedData) broadcastToAll(cachedData);
+              if (cachedData) {
+                cachedData = {
+                  ...cachedData,
+                  meta: {
+                    ...cachedData.meta,
+                    tokenSource: config.tokenSource,
+                    ...(key === 'plan' ? { plan: value } : {}),
+                  },
+                };
+                broadcastToAll(cachedData);
+              }
             } catch (err) {
               logError(`[setConfig] write failed: ${err instanceof Error ? err.message : String(err)}`);
             }

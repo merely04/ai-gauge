@@ -13,7 +13,11 @@ let package = Package(
         .executableTarget(
             name: "AIGauge",
             path: "Sources/AIGauge",
-            exclude: ["Info.plist"]
+            exclude: ["Info.plist"],
+            resources: [
+                .copy("Info.plist"),
+                .copy("Credits.rtf")
+            ]
         )
     ]
 )

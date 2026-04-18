@@ -3,9 +3,22 @@
 <plist version="1.0">
 <dict>
 	<key>files</key>
-	<dict/>
+	<dict>
+		<key>Resources/Credits.rtf</key>
+		<data>
+		004bEKmH4YEIQkglvWvwFvDo9Fw=
+		</data>
+	</dict>
 	<key>files2</key>
-	<dict/>
+	<dict>
+		<key>Resources/Credits.rtf</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			izga3og16ilBXlsuaQSGa2/AlAw88FlkOeo6intVz9A=
+			</data>
+		</dict>
+	</dict>
 	<key>rules</key>
 	<dict>
 		<key>^Resources/</key>

@@ -19,6 +19,7 @@ struct UsagePayload: Codable {
     struct Meta: Codable {
         let plan: String?
         let fetchedAt: String?
+        let tokenSource: String?
     }
 
     let five_hour: Window?

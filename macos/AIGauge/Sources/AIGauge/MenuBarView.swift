@@ -47,8 +47,12 @@ struct MenuBarView: View {
             Actions.restartServer()
         }
 
-        Button("Open Config") {
-            Actions.openConfig()
+        Button("Reveal Config in Finder") {
+            Actions.revealConfigInFinder()
+        }
+
+        Button("About AI Gauge") {
+            Actions.showAbout()
         }
 
         Divider()

@@ -68,6 +68,9 @@ final class UsageModel: ObservableObject {
         let plan = payload.meta?.plan ?? "unknown"
         tooltipStr += "\n───────────────"
         tooltipStr += "\nPlan: \(plan)"
+        if let tokenSource = payload.meta?.tokenSource, !tokenSource.isEmpty {
+            tooltipStr += "\nToken source: \(tokenSource)"
+        }
 
         self.tooltip = tooltipStr
     }
