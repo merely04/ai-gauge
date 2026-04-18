@@ -15,7 +15,7 @@ struct MenuBarView: View {
     var body: some View {
         ForEach(Array(tooltipLines.enumerated()), id: \.offset) { _, line in
             Text(line)
-                .foregroundStyle(urgencyColor)
+                .foregroundColor(urgencyColor)
         }
 
         Divider()
@@ -106,7 +106,7 @@ struct MenuBarView: View {
 
     private var urgencyColor: Color {
         switch usageModel.urgency {
-        case .ok: return Color(nsColor: .labelColor)
+        case .ok: return Color.primary
         case .warning: return .orange
         case .critical: return .red
         }
