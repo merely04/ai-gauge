@@ -6,9 +6,6 @@ struct MenuBarView: View {
     @EnvironmentObject var usageModel: UsageModel
     @EnvironmentObject var configMutator: ConfigMutator
 
-    @State private var selectedPlan: String = ""
-    @State private var selectedSource: String = ""
-
     private let plans: [String] = ["max", "pro", "team", "enterprise", "unknown"]
     private let sources: [(value: String, display: String)] = [
         ("claude-code", "Claude Code"),
@@ -66,9 +63,8 @@ struct MenuBarView: View {
     private func planButton(for plan: String) -> some View {
         Button {
             configMutator.setPlan(plan)
-            selectedPlan = plan
         } label: {
-            if selectedPlan == plan {
+            if usageModel.plan == plan {
                 Label(plan, systemImage: "checkmark")
             } else {
                 Text(plan)
@@ -80,9 +76,8 @@ struct MenuBarView: View {
     private func sourceButton(value: String, display: String) -> some View {
         Button {
             configMutator.setTokenSource(value)
-            selectedSource = value
         } label: {
-            if selectedSource == value {
+            if usageModel.tokenSource == value {
                 Label(display, systemImage: "checkmark")
             } else {
                 Text(display)

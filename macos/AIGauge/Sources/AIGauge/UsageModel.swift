@@ -19,6 +19,8 @@ final class UsageModel: ObservableObject {
     @Published var text: String = "--"
     @Published var tooltip: String = ""
     @Published var urgency: Urgency = .ok
+    @Published var plan: String = ""
+    @Published var tokenSource: String = ""
 
     /// Replicates `render()` from `bin/ai-gauge-waybar` — transforms the raw
     /// Anthropic API broadcast into display-ready text/tooltip/urgency.
@@ -66,6 +68,8 @@ final class UsageModel: ObservableObject {
         }
 
         let plan = payload.meta?.plan ?? "unknown"
+        self.plan = payload.meta?.plan ?? ""
+        self.tokenSource = payload.meta?.tokenSource ?? ""
         tooltipStr += "\n───────────────"
         tooltipStr += "\nPlan: \(plan)"
         if let tokenSource = payload.meta?.tokenSource, !tokenSource.isEmpty {

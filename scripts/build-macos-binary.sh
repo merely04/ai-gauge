@@ -46,6 +46,13 @@ cp "$REPO_ROOT/macos/AIGauge/.build/release/AIGauge_AIGauge.bundle/Credits.rtf" 
 cp "$REPO_ROOT/macos/AIGauge/Sources/AIGauge/Info.plist" "$APP_DIR/Contents/Info.plist"
 plutil -lint "$APP_DIR/Contents/Info.plist"
 
+ICON_SRC="$REPO_ROOT/macos/AIGauge/assets/AppIcon.icns"
+if [[ -f "$ICON_SRC" ]]; then
+  cp "$ICON_SRC" "$APP_DIR/Contents/Resources/AppIcon.icns"
+else
+  echo "Warning: $ICON_SRC missing — run scripts/generate-icon.sh to create it"
+fi
+
 echo "Ad-hoc signing .app bundle..."
 codesign --force --deep --sign - "$APP_DIR"
 
