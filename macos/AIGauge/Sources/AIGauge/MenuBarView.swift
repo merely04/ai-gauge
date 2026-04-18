@@ -14,12 +14,14 @@ struct MenuBarView: View {
 
     var body: some View {
         Text(usageModel.tooltip.isEmpty ? "Connecting to ai-gauge-server..." : usageModel.tooltip)
-            .foregroundColor(urgencyColor)
+            .foregroundStyle(urgencyColor)
+            .font(.system(size: 13, weight: .medium))
 
         Divider()
 
         Button(action: { Actions.copyUsage(usageModel) }) {
             Label("Copy usage summary", systemImage: "doc.on.doc")
+                .labelStyle(.titleAndIcon)
         }
 
         Menu {
@@ -28,6 +30,7 @@ struct MenuBarView: View {
             }
         } label: {
             Label("Change plan", systemImage: "star.circle")
+                .labelStyle(.titleAndIcon)
         }
 
         Menu {
@@ -36,30 +39,36 @@ struct MenuBarView: View {
             }
         } label: {
             Label("Change token source", systemImage: "key.fill")
+                .labelStyle(.titleAndIcon)
         }
 
         Divider()
 
         Button(action: { configMutator.refresh() }) {
             Label("Refresh now", systemImage: "arrow.clockwise")
+                .labelStyle(.titleAndIcon)
         }
 
         Button(action: { Actions.restartServer() }) {
             Label("Restart server", systemImage: "arrow.triangle.2.circlepath")
+                .labelStyle(.titleAndIcon)
         }
 
         Button(action: { Actions.revealConfigInFinder() }) {
             Label("Reveal Config in Finder", systemImage: "folder")
+                .labelStyle(.titleAndIcon)
         }
 
         Button(action: { Actions.showAbout() }) {
             Label("About AI Gauge", systemImage: "info.circle")
+                .labelStyle(.titleAndIcon)
         }
 
         Divider()
 
         Button(action: { NSApp.terminate(nil) }) {
             Label("Quit AI Gauge", systemImage: "power")
+                .labelStyle(.titleAndIcon)
         }
     }
 

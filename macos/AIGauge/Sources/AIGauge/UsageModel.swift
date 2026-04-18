@@ -67,14 +67,8 @@ final class UsageModel: ObservableObject {
             tooltipStr += "\nExtra: $\(String(format: "%.2f", extraUsed))/$\(extraLimit) (\(extraPct)%)"
         }
 
-        let plan = payload.meta?.plan ?? "unknown"
         self.plan = payload.meta?.plan ?? ""
         self.tokenSource = payload.meta?.tokenSource ?? ""
-        tooltipStr += "\n───────────────"
-        tooltipStr += "\nPlan: \(plan)"
-        if let tokenSource = payload.meta?.tokenSource, !tokenSource.isEmpty {
-            tooltipStr += "\nToken source: \(tokenSource)"
-        }
 
         self.tooltip = tooltipStr
     }
