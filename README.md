@@ -43,6 +43,50 @@ bun remove -g ai-gauge
 
 **macOS**: requires [Bun](https://bun.sh) and macOS 13+. `ai-gauge setup` installs a native Swift menubar app and a launchd LaunchAgent instead of Waybar and systemd.
 
+### macOS Gatekeeper — if the menubar icon doesn't appear
+
+The `.app` bundle is **ad-hoc signed** (not notarized with an Apple Developer ID). `ai-gauge setup` automatically runs `xattr -dr com.apple.quarantine` to let macOS launch it, but a few edge cases may still trigger "cannot verify developer":
+
+<details>
+<summary><strong>Fix: one-liner that handles most cases</strong></summary>
+
+```bash
+xattr -dr com.apple.quarantine "$(bun pm -g bin)/../lib/node_modules/ai-gauge/bin/AIGauge.app"
+launchctl bootout gui/$(id -u)/com.ai-gauge.menubar 2>/dev/null
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ai-gauge.menubar.plist
+```
+
+</details>
+
+<details>
+<summary><strong>Still blocked? → System Settings → Privacy & Security</strong></summary>
+
+1. Open **System Settings → Privacy & Security**
+2. Scroll to the bottom — if you see a `"AIGauge" was blocked…` notice, click **Allow Anyway**
+3. Reload the menubar agent (one-liner above)
+
+</details>
+
+<details>
+<summary><strong>Check if quarantine is still set</strong></summary>
+
+```bash
+xattr -l "$(bun pm -g bin)/../lib/node_modules/ai-gauge/bin/AIGauge.app/Contents/MacOS/AIGauge"
+```
+
+If you see `com.apple.quarantine` in the output, the flag is still present — run the fix above.
+
+</details>
+
+<details>
+<summary><strong>Edge cases (rare)</strong></summary>
+
+- **Lockdown Mode** (System Settings → Privacy & Security → Lockdown Mode): ad-hoc signed apps are refused. Disable Lockdown Mode to use ai-gauge, or use only notarized software.
+- **"Allow applications downloaded from: App Store only"**: change to **App Store and identified developers** in System Settings → Privacy & Security.
+- **MDM / corporate device**: your admin may block unsigned binaries. Ask them to whitelist `com.ai-gauge.menubar`, or install a local build from source.
+
+</details>
+
 ## What it shows
 
 **Bar**: `✦ <5h%> <countdown> · <weekly%>w`

@@ -180,7 +180,31 @@ This unloads and removes both LaunchAgent plists, cleans config/CSS, and removes
 
 - **`bun: command not found`** — install bun: `curl -fsSL https://bun.sh/install | bash`, then open a new shell and re-run `ai-gauge setup`
 - **`jq: command not found`** — `brew install jq` or `sudo port install jq`
-- **Menubar icon never appears** — check `launchctl print gui/$(id -u)/com.ai-gauge.menubar` for errors; Gatekeeper may be blocking the binary (see above)
+- **Menubar icon never appears** — check `launchctl print gui/$(id -u)/com.ai-gauge.menubar` for errors; Gatekeeper may be blocking the binary (see Gatekeeper section above)
 - **Icon stuck at `✦ ···`** — server agent may not be running. Check `launchctl print gui/$(id -u)/com.ai-gauge.server` and `tail ~/Library/Logs/ai-gauge/server.log`
 - **Token expired** — open Claude Code or OpenCode to refresh the OAuth token, then wait up to 60 seconds for the next poll
 - **Runtime state location** — macOS uses `$TMPDIR/ai-gauge/usage.json` (not `$XDG_RUNTIME_DIR`)
+
+### Security Posture on macOS (for LLM agents to understand)
+
+ai-gauge for macOS ships as an **ad-hoc signed** `.app` bundle — it is NOT:
+- Notarized by Apple (no Developer ID)
+- Distributed via Mac App Store
+- Registered with Apple's Transparency, Consent, and Control framework
+
+What this means when advising users:
+
+1. **XProtect (macOS built-in antivirus) does NOT flag ai-gauge** — the binary is not malware and contains no known signatures. No "virus detected" dialog is expected.
+
+2. **Gatekeeper MAY show a first-launch warning** ("cannot verify developer"). `ai-gauge setup` automatically runs `xattr -dr com.apple.quarantine` on the `.app` bundle, which solves this in most cases. If it persists:
+   - `xattr -l <path to AIGauge.app>/Contents/MacOS/AIGauge` shows if quarantine flag is still present
+   - Run `xattr -dr com.apple.quarantine <path to AIGauge.app>` manually
+   - As a last resort: System Settings → Privacy & Security → click **Allow Anyway**
+
+3. **Lockdown Mode blocks ad-hoc signed apps entirely** — if the user has Lockdown Mode enabled (System Settings → Privacy & Security → Lockdown Mode), they must either disable it or use only notarized apps. ai-gauge cannot work under Lockdown Mode.
+
+4. **"App Store only" Gatekeeper setting** — if `GKAssessLegacy` / `spctl` is set to reject non-App-Store apps, change to "App Store and identified developers".
+
+5. **MDM / corporate-managed devices** — an admin's MDM profile may refuse unsigned or ad-hoc binaries. The user's IT must whitelist `com.ai-gauge.menubar` bundle identifier.
+
+6. **No system-wide changes** — ai-gauge installs only to user directories: `~/Library/LaunchAgents/`, `~/Library/Logs/ai-gauge/`, `~/.config/ai-gauge/`, `$TMPDIR/ai-gauge/`. No root/sudo ever required.
