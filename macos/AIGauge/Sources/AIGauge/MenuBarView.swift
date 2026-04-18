@@ -61,28 +61,26 @@ struct MenuBarView: View {
 
     @ViewBuilder
     private func planButton(for plan: String) -> some View {
-        Button {
-            configMutator.setPlan(plan)
-        } label: {
-            if usageModel.plan == plan {
-                Label(plan, systemImage: "checkmark")
-            } else {
-                Text(plan)
+        Toggle(plan, isOn: Binding(
+            get: { usageModel.plan == plan },
+            set: { newValue in
+                if newValue {
+                    configMutator.setPlan(plan)
+                }
             }
-        }
+        ))
     }
 
     @ViewBuilder
     private func sourceButton(value: String, display: String) -> some View {
-        Button {
-            configMutator.setTokenSource(value)
-        } label: {
-            if usageModel.tokenSource == value {
-                Label(display, systemImage: "checkmark")
-            } else {
-                Text(display)
+        Toggle(display, isOn: Binding(
+            get: { usageModel.tokenSource == value },
+            set: { newValue in
+                if newValue {
+                    configMutator.setTokenSource(value)
+                }
             }
-        }
+        ))
     }
 
     private var urgencyColor: Color {
