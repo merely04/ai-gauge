@@ -18,44 +18,48 @@ struct MenuBarView: View {
 
         Divider()
 
-        Button("Copy usage summary") {
-            Actions.copyUsage(usageModel)
+        Button(action: { Actions.copyUsage(usageModel) }) {
+            Label("Copy usage summary", systemImage: "doc.on.doc")
         }
 
-        Menu("Change plan") {
+        Menu {
             ForEach(plans, id: \.self) { plan in
                 planButton(for: plan)
             }
+        } label: {
+            Label("Change plan", systemImage: "star.circle")
         }
 
-        Menu("Change token source") {
+        Menu {
             ForEach(sources, id: \.value) { source in
                 sourceButton(value: source.value, display: source.display)
             }
+        } label: {
+            Label("Change token source", systemImage: "key.fill")
         }
 
         Divider()
 
-        Button("Refresh now") {
-            configMutator.refresh()
+        Button(action: { configMutator.refresh() }) {
+            Label("Refresh now", systemImage: "arrow.clockwise")
         }
 
-        Button("Restart server") {
-            Actions.restartServer()
+        Button(action: { Actions.restartServer() }) {
+            Label("Restart server", systemImage: "arrow.triangle.2.circlepath")
         }
 
-        Button("Reveal Config in Finder") {
-            Actions.revealConfigInFinder()
+        Button(action: { Actions.revealConfigInFinder() }) {
+            Label("Reveal Config in Finder", systemImage: "folder")
         }
 
-        Button("About AI Gauge") {
-            Actions.showAbout()
+        Button(action: { Actions.showAbout() }) {
+            Label("About AI Gauge", systemImage: "info.circle")
         }
 
         Divider()
 
-        Button("Quit AI Gauge") {
-            NSApp.terminate(nil)
+        Button(action: { NSApp.terminate(nil) }) {
+            Label("Quit AI Gauge", systemImage: "power")
         }
     }
 
