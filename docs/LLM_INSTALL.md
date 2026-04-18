@@ -151,8 +151,7 @@ If the first launch fails with "cannot verify developer" or "Apple cannot check 
 **Option 1 — remove quarantine flag:**
 
 ```bash
-xattr -d com.apple.quarantine $(bun pm -g bin)/../lib/node_modules/ai-gauge/bin/ai-gauge-menubar
-xattr -d com.apple.quarantine $(bun pm -g bin)/../lib/node_modules/ai-gauge/bin/ai-gauge-server
+xattr -dr com.apple.quarantine $(bun pm -g bin)/../lib/node_modules/ai-gauge/bin/AIGauge.app
 ```
 
 **Option 2 — System Settings:**
@@ -162,10 +161,10 @@ System Settings → Privacy & Security → scroll to the blocked app entry → c
 After either fix, reload the agents:
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.ai-gauge.server.plist
-launchctl load ~/Library/LaunchAgents/com.ai-gauge.server.plist
-launchctl unload ~/Library/LaunchAgents/com.ai-gauge.menubar.plist
-launchctl load ~/Library/LaunchAgents/com.ai-gauge.menubar.plist
+launchctl bootout gui/$(id -u)/com.ai-gauge.server
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ai-gauge.server.plist
+launchctl bootout gui/$(id -u)/com.ai-gauge.menubar
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ai-gauge.menubar.plist
 ```
 
 ### Uninstall

@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve package directory (follows symlinks from global bin).
+if readlink -f "${BASH_SOURCE[0]}" >/dev/null 2>&1; then
+    SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+else
+    SELF="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${BASH_SOURCE[0]}")"
+fi
+SCRIPT_DIR="$(dirname "$SELF")"
 source "$SCRIPT_DIR/../lib/bash-helpers.sh"
 
 STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/ai-gauge"
