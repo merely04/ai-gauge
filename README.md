@@ -1,6 +1,12 @@
-# ai-gauge
+<h1 align="center">
+  <img src="assets/icon.png" width="128" alt="AI Gauge icon" /><br>
+  ai-gauge
+</h1>
 
-Real-time Claude Code usage monitor. Tracks 5-hour and weekly API rate limits with countdown timers and desktop notifications. Runs on Linux (Waybar) and macOS (native menubar app).
+<p align="center">
+  Real-time Claude Code usage monitor. Tracks 5-hour and weekly API rate limits with countdown timers and desktop notifications.<br>
+  Runs on Linux (Waybar) and macOS (native menubar app).
+</p>
 
 ```
 ✦ 44% 2h31m · 15%w
