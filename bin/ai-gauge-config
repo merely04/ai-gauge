@@ -30,9 +30,67 @@ get_field() {
 send_ws() {
     if [[ "${DRY_RUN:-0}" == "1" ]]; then
         echo "WOULD_SEND: $1"
-    else
-        echo "$1" | bun "$SCRIPT_DIR/../lib/send-ws.js"
+        return 0
     fi
+    echo "$1" | bun "$SCRIPT_DIR/../lib/send-ws.js" 2>/dev/null
+}
+
+write_config_direct() {
+    local key="$1"
+    local value="$2"
+    local current
+    current=$(read_config)
+    local json_value
+    case "$key" in
+        autoCheckUpdates)
+            json_value="$value"
+            ;;
+        *)
+            json_value="\"$value\""
+            ;;
+    esac
+    echo "$current" | jq ".${key} = ${json_value}" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+}
+
+try_reload_server() {
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user restart ai-gauge-server 2>/dev/null || true
+    elif is_macos; then
+        launchctl kickstart -k "gui/$UID/com.ai-gauge.server" 2>/dev/null || true
+    fi
+}
+
+apply_config() {
+    local key="$1"
+    local value="$2"
+    local msg="$3"
+
+    if [[ "${DRY_RUN:-0}" == "1" ]]; then
+        local json_value
+        case "$key" in
+            autoCheckUpdates) json_value="$value" ;;
+            *) json_value="\"$value\"" ;;
+        esac
+        echo "WOULD_SEND: {\"type\":\"setConfig\",\"key\":\"$key\",\"value\":${json_value}}"
+        return 0
+    fi
+
+    local json_value
+    case "$key" in
+        autoCheckUpdates) json_value="$value" ;;
+        *) json_value="\"$value\"" ;;
+    esac
+
+    if echo "{\"type\":\"setConfig\",\"key\":\"$key\",\"value\":${json_value}}" | bun "$SCRIPT_DIR/../lib/send-ws.js" 2>/dev/null; then
+        [[ -n "$msg" ]] && notify-send -t 2000 -a "AI Gauge" "$msg" 2>/dev/null || true
+        return 0
+    fi
+
+    echo "ai-gauge-server not reachable; writing config file directly" >&2
+    write_config_direct "$key" "$value"
+    try_reload_server
+    [[ -n "$msg" ]] && notify-send -t 2000 -a "AI Gauge" "$msg" 2>/dev/null || true
+    return 0
 }
 
 # CLI mode
@@ -60,7 +118,6 @@ if [[ "${1:-}" == "set" ]]; then
                 echo "Error: autoCheckUpdates must be true or false" >&2
                 exit 1
             fi
-            json_value="$value"
             ;;
         plan)
             case "$value" in
@@ -70,7 +127,6 @@ if [[ "${1:-}" == "set" ]]; then
                     exit 1
                     ;;
             esac
-            json_value="\"$value\""
             ;;
         tokenSource)
             case "$value" in
@@ -80,7 +136,6 @@ if [[ "${1:-}" == "set" ]]; then
                     exit 1
                     ;;
             esac
-            json_value="\"$value\""
             ;;
         *)
             echo "Error: unknown key '$key' (valid: plan, tokenSource, autoCheckUpdates)" >&2
@@ -88,7 +143,7 @@ if [[ "${1:-}" == "set" ]]; then
             ;;
     esac
 
-    send_ws "{\"type\":\"setConfig\",\"key\":\"$key\",\"value\":${json_value}}"
+    apply_config "$key" "$value" ""
     echo "Set $key = $value"
     exit 0
 fi
@@ -130,8 +185,7 @@ case "$choice" in
         new_source=$(printf '%s\n' "claude-code" "opencode" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 150 -p "Token Source" 2>/dev/null
         ) || exit 0
-        send_ws "{\"type\":\"setConfig\",\"key\":\"tokenSource\",\"value\":\"$new_source\"}"
-        notify-send -t 2000 -a "AI Gauge" "Token source: $new_source"
+        apply_config tokenSource "$new_source" "Token source: $new_source"
         ;;
     *"Plan"*)
         if [[ "${DRY_RUN:-0}" == "1" ]]; then
@@ -141,8 +195,7 @@ case "$choice" in
         new_plan=$(printf '%s\n' "max" "pro" "team" "enterprise" "unknown" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null
         ) || exit 0
-        send_ws "{\"type\":\"setConfig\",\"key\":\"plan\",\"value\":\"$new_plan\"}"
-        notify-send -t 2000 -a "AI Gauge" "Plan: $new_plan"
+        apply_config plan "$new_plan" "Plan: $new_plan"
         ;;
     *"Auto-check updates"*)
         if [[ "${current_auto_check_updates:-true}" == "true" ]]; then
@@ -150,11 +203,7 @@ case "$choice" in
         else
             new_auto_check_updates=true
         fi
-        if [[ "${DRY_RUN:-0}" == "1" ]]; then
-            echo "WOULD_SET: autoCheckUpdates=$new_auto_check_updates"
-        else
-            send_ws "{\"type\":\"setConfig\",\"key\":\"autoCheckUpdates\",\"value\":${new_auto_check_updates}}"
-        fi
+        apply_config autoCheckUpdates "$new_auto_check_updates" ""
         echo "Set autoCheckUpdates = $new_auto_check_updates"
         ;;
 esac
