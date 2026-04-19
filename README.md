@@ -12,6 +12,7 @@
   <a href="https://www.npmjs.com/package/ai-gauge"><img src="https://img.shields.io/npm/v/ai-gauge.svg?color=cb3837&logo=npm" alt="npm version" /></a>
   <a href="https://github.com/merely04/ai-gauge/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey" alt="Platform: macOS | Linux" />
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-fbf0df?logo=bun&logoColor=black" alt="Runtime: Bun" /></a>
   <a href="https://github.com/merely04/ai-gauge/actions/workflows/publish.yml"><img src="https://github.com/merely04/ai-gauge/actions/workflows/publish.yml/badge.svg" alt="CI" /></a>
 </p>
 
