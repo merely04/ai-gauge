@@ -78,19 +78,21 @@ else
     SELECTED=$(printf '%s\n' "${ITEMS[@]}" | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 300 -p "AI Gauge" 2>/dev/null) || exit 0
 fi
 
+SEND_WS="$SCRIPT_DIR/../lib/send-ws.js"
+
 case "$SELECTED" in
     "✨ Update to v"*)
         if [[ "${DRY_RUN:-0}" == "1" ]]; then
             echo 'WOULD_SEND: {"type":"doUpdate"}'
         else
-            echo '{"type":"doUpdate"}' | bun lib/send-ws.js
+            echo '{"type":"doUpdate"}' | bun "$SEND_WS"
         fi
         ;;
     "🔍 Check for updates")
         if [[ "${DRY_RUN:-0}" == "1" ]]; then
             echo 'WOULD_SEND: {"type":"checkUpdate"}'
         else
-            echo '{"type":"checkUpdate"}' | bun lib/send-ws.js
+            echo '{"type":"checkUpdate"}' | bun "$SEND_WS"
         fi
         ;;
     "📄 View changelog")
@@ -102,7 +104,10 @@ case "$SELECTED" in
         ;;
     "⚠ Update failed: "*)
         if [[ "${DRY_RUN:-0}" == "1" ]]; then
-            echo 'WOULD_COPY: npm install -g ai-gauge'
+            echo 'WOULD_SEND: {"type":"doUpdate"}'
+        else
+            echo '{"type":"doUpdate"}' | bun "$SEND_WS"
+            notify-send -t 2000 -a "AI Gauge" "Retrying update..." 2>/dev/null || true
         fi
         ;;
     *"Refresh"*)

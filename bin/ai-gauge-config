@@ -27,17 +27,6 @@ get_field() {
     read_config | jq -r ".$1 // empty"
 }
 
-set_field() {
-    local key="$1" value="$2"
-    local config
-    config=$(read_config)
-    echo "$config" | jq --arg k "$key" --arg v "$value" '.[$k] = $v' > "$CONFIG_FILE"
-}
-
-restart_server() {
-    systemctl --user restart ai-gauge-server 2>/dev/null || true
-}
-
 send_ws() {
     if [[ "${DRY_RUN:-0}" == "1" ]]; then
         echo "WOULD_SEND: $1"
@@ -61,26 +50,46 @@ if [[ "${1:-}" == "set" ]]; then
         echo "Usage: ai-gauge-config set <key> <value>" >&2
         exit 1
     fi
-    if [[ "$2" == "autoCheckUpdates" ]]; then
-        if [[ "$3" == "true" ]]; then
-            json_value="true"
-        elif [[ "$3" == "false" ]]; then
-            json_value="false"
-        else
-            echo "Error: autoCheckUpdates must be true or false" >&2
+
+    key="$2"
+    value="$3"
+
+    case "$key" in
+        autoCheckUpdates)
+            if [[ "$value" != "true" && "$value" != "false" ]]; then
+                echo "Error: autoCheckUpdates must be true or false" >&2
+                exit 1
+            fi
+            json_value="$value"
+            ;;
+        plan)
+            case "$value" in
+                max|pro|team|enterprise|unknown) ;;
+                *)
+                    echo "Error: plan must be one of: max, pro, team, enterprise, unknown" >&2
+                    exit 1
+                    ;;
+            esac
+            json_value="\"$value\""
+            ;;
+        tokenSource)
+            case "$value" in
+                claude-code|opencode) ;;
+                *)
+                    echo "Error: tokenSource must be one of: claude-code, opencode" >&2
+                    exit 1
+                    ;;
+            esac
+            json_value="\"$value\""
+            ;;
+        *)
+            echo "Error: unknown key '$key' (valid: plan, tokenSource, autoCheckUpdates)" >&2
             exit 1
-        fi
-        if [[ "${DRY_RUN:-0}" == "1" ]]; then
-            echo "WOULD_SET: autoCheckUpdates=$3"
-        else
-            send_ws "{\"type\":\"setConfig\",\"key\":\"autoCheckUpdates\",\"value\":${json_value}}"
-        fi
-        echo "Set autoCheckUpdates = $3"
-        exit 0
-    fi
-    set_field "$2" "$3"
-    echo "Set $2 = $3"
-    restart_server
+            ;;
+    esac
+
+    send_ws "{\"type\":\"setConfig\",\"key\":\"$key\",\"value\":${json_value}}"
+    echo "Set $key = $value"
     exit 0
 fi
 
@@ -121,9 +130,8 @@ case "$choice" in
         new_source=$(printf '%s\n' "claude-code" "opencode" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 150 -p "Token Source" 2>/dev/null
         ) || exit 0
-        set_field "tokenSource" "$new_source"
+        send_ws "{\"type\":\"setConfig\",\"key\":\"tokenSource\",\"value\":\"$new_source\"}"
         notify-send -t 2000 -a "AI Gauge" "Token source: $new_source"
-        restart_server
         ;;
     *"Plan"*)
         if [[ "${DRY_RUN:-0}" == "1" ]]; then
@@ -133,9 +141,8 @@ case "$choice" in
         new_plan=$(printf '%s\n' "max" "pro" "team" "enterprise" "unknown" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null
         ) || exit 0
-        set_field "plan" "$new_plan"
+        send_ws "{\"type\":\"setConfig\",\"key\":\"plan\",\"value\":\"$new_plan\"}"
         notify-send -t 2000 -a "AI Gauge" "Plan: $new_plan"
-        restart_server
         ;;
     *"Auto-check updates"*)
         if [[ "${current_auto_check_updates:-true}" == "true" ]]; then
