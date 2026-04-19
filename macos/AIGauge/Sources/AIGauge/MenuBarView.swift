@@ -95,14 +95,30 @@ struct MenuBarView: View {
 
         Divider()
 
-        Toggle("Auto-check for updates", isOn: Binding(
-            get: { usageModel.autoCheckUpdatesEnabled },
-            set: { newValue in
-                configMutator.setAutoCheckUpdates(newValue)
-            }
-        ))
+        autoCheckMenu
 
         Divider()
+    }
+
+    @ViewBuilder
+    private var autoCheckMenu: some View {
+        Menu {
+            Toggle("On", isOn: Binding(
+                get: { usageModel.autoCheckUpdatesEnabled },
+                set: { newValue in
+                    if newValue { configMutator.setAutoCheckUpdates(true) }
+                }
+            ))
+            Toggle("Off", isOn: Binding(
+                get: { !usageModel.autoCheckUpdatesEnabled },
+                set: { newValue in
+                    if newValue { configMutator.setAutoCheckUpdates(false) }
+                }
+            ))
+        } label: {
+            Label("Auto-check for updates", systemImage: "clock.arrow.circlepath")
+                .labelStyle(.titleAndIcon)
+        }
     }
 
     @ViewBuilder

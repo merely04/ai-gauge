@@ -44,6 +44,12 @@ chmod +x "$APP_DIR/Contents/MacOS/AIGauge"
 cp "$REPO_ROOT/macos/AIGauge/.build/release/AIGauge_AIGauge.bundle/Credits.rtf" "$APP_DIR/Contents/Resources/Credits.rtf"
 
 cp "$REPO_ROOT/macos/AIGauge/Sources/AIGauge/Info.plist" "$APP_DIR/Contents/Info.plist"
+
+PACKAGE_VERSION="$(jq -r .version "$REPO_ROOT/package.json")"
+echo "Stamping Info.plist with version $PACKAGE_VERSION..."
+plutil -replace CFBundleVersion -string "$PACKAGE_VERSION" "$APP_DIR/Contents/Info.plist"
+plutil -replace CFBundleShortVersionString -string "$PACKAGE_VERSION" "$APP_DIR/Contents/Info.plist"
+
 plutil -lint "$APP_DIR/Contents/Info.plist"
 
 ICON_SRC="$REPO_ROOT/macos/AIGauge/assets/AppIcon.icns"
