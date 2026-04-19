@@ -212,6 +212,35 @@ describe('update flow — end-to-end integration', () => {
     expect(cancelled).toBe(true);
   }, 15000);
 
+  test('dismissUpdate suppresses updateAvailable for the dismissed version', async () => {
+    registry = startMockRegistry({ port: registryPort, latestVersion: '99.0.0' });
+    server = startServer({ home, registryPort, env: { CI: '' } });
+
+    const ready = await waitFor(() => server.stderr.includes('listening on ws://'));
+    expect(ready).toBe(true);
+
+    const firstRound = await listenBroadcasts({ limitMs: 2500, filter: 'updateAvailable' });
+    expect(firstRound.length).toBeGreaterThanOrEqual(1);
+
+    const dismissProc = Bun.spawn(['bun', SEND_WS], {
+      stdin: 'pipe',
+      stdout: 'pipe',
+      env: { ...process.env, AIGAUGE_WS_URL: `ws://localhost:${WS_PORT}` },
+    });
+    dismissProc.stdin.write('{"type":"dismissUpdate","version":"99.0.0"}');
+    dismissProc.stdin.end();
+    await dismissProc.exited;
+
+    const dismissed = await waitFor(
+      () => server.stderr.includes('dismissed v99.0.0'),
+      { timeoutMs: 3000 },
+    );
+    expect(dismissed).toBe(true);
+
+    const reconnectPayloads = await listenBroadcasts({ limitMs: 1000, filter: 'updateAvailable' });
+    expect(reconnectPayloads.length).toBe(0);
+  }, 20000);
+
   test('rehydrates lastNotifiedVersion from cache on restart', async () => {
     const cacheFile = join(home, 'Library', 'Caches', 'ai-gauge', 'update-check.json');
     writeFileSync(

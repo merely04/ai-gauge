@@ -355,6 +355,26 @@ function createServer() {
             return;
           }
 
+          if (cmd?.type === 'dismissUpdate') {
+            const version = typeof cmd.version === 'string' ? cmd.version : updateLifecycle.getState().latestVersion;
+            void updateLifecycle.dismiss(version).then((result) => {
+              if (result.dismissed) {
+                logError(`[update] dismissed v${result.version}`);
+              }
+            });
+            return;
+          }
+
+          if (cmd?.type === 'undismissUpdate') {
+            void updateLifecycle.undismiss().then((result) => {
+              if (result.undismissed) {
+                logError(`[update] undismissed v${result.previous}`);
+                void updateLifecycle.doCheck({ manual: true });
+              }
+            });
+            return;
+          }
+
           if (cmd?.type === 'setConfig') {
             await handleSetConfig(cmd);
           }
