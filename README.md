@@ -184,6 +184,35 @@ ai-gauge-config set plan max
 ai-gauge-config get
 ```
 
+## Update Notifications
+
+ai-gauge automatically checks for updates every 24 hours (with a 30-second initial delay after startup) and notifies you via the menubar/waybar.
+
+### What you'll see
+
+**macOS**: An orange dot appears in the menu bar icon. Click to open the menu — an "Update to vX.Y.Z" item appears at the top. Click it to update. You'll also get a native notification.
+
+**Linux (Waybar)**: The waybar text gains a ⬆ suffix and turns yellow (`update-available` CSS class). Use the right-click menu → "✨ Update to vX.Y.Z" to trigger the update.
+
+If the automatic update fails (e.g., due to permissions), the install command is copied to your clipboard.
+
+### Manual check
+
+- **macOS**: Menu → "Check for updates now"
+- **Linux**: Right-click menu → "🔍 Check for updates"
+- **CLI**: `echo '{"type":"checkUpdate"}' | bun lib/send-ws.js`
+
+### Disable update checks
+
+**Permanently** (per-machine):
+```bash
+ai-gauge-config set autoCheckUpdates false
+```
+
+**Session**: Set `NO_UPDATE_NOTIFIER=1` in the environment before starting the daemon.
+
+**CI environments**: Update checks are automatically skipped when any of these env vars are set: `CI`, `CONTINUOUS_INTEGRATION`, `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `JENKINS_HOME`, `BUILDKITE`, `DRONE`, `TRAVIS`.
+
 ## StreamDock (Fifine D6)
 
 The plugin shows usage stats on a physical key of the Fifine AmpliGame D6 stream controller.

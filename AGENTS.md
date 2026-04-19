@@ -60,6 +60,8 @@ State/config paths (never relocate without updating every script):
 
 - Config: `~/.config/ai-gauge/config.json` (`{tokenSource, plan}`)
 - Runtime state: `${XDG_RUNTIME_DIR:-/tmp}/ai-gauge/usage.json` (atomic write via temp + `renameSync`)
+- `${stateDir}/update-state.json` — latest update availability (read by `bin/ai-gauge-menu`)
+- `${cacheDir}/update-check.json` — last check result with 24h TTL
 - systemd unit: `~/.config/systemd/user/ai-gauge-server.service`
 - Waybar config patched: `~/.config/waybar/config.jsonc` + `~/.config/waybar/style.css`
 - StreamDock install path (Wine): `~/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins/com.ai-gauge.streamdock.sdPlugin`
@@ -115,7 +117,7 @@ Server broadcasts the **raw Anthropic API response** merged with a `meta` field 
   "seven_day_cowork": null,
   "seven_day_omelette": {"utilization": 0, "resets_at": null},
   "extra_usage": {"is_enabled": true, "monthly_limit": 20000, "used_credits": 18752, "utilization": 93.76, "currency": "USD"},
-  "meta": {"plan": "unknown", "tokenSource": "opencode", "fetchedAt": "2026-04-17T20:27:38.885Z"}
+  "meta": {"plan": "unknown", "tokenSource": "opencode", "fetchedAt": "2026-04-17T20:27:38.885Z", "version": "1.2.0", "protocolVersion": 1, "autoCheckUpdates": true}
 }
 ```
 
@@ -124,6 +126,9 @@ Field notes:
 - `resets_at` is ISO-8601 with **microsecond precision and `+00:00` timezone** — Swift's `ISO8601DateFormatter` with `.withFractionalSeconds` only handles milliseconds, so the Swift client has a fallback parser (see `UsageModel.parseISODate`).
 - `extra_usage.monthly_limit` and `used_credits` are in cents; divide by 100 for dollars.
 - `meta.plan`, `meta.tokenSource`, and `meta.fetchedAt` are injected by the server from `config.json` / the current state (not upstream Anthropic fields). `tokenSource` is re-broadcast on every poll and immediately after a `setConfig` mutation so clients can reflect the current selection (used by the macOS menubar for checkmarks).
+- `meta.version` — the daemon's own ai-gauge version (from `package.json`).
+- `meta.protocolVersion` — currently `1` (for forward compat).
+- `meta.autoCheckUpdates` — current value of the `autoCheckUpdates` config key.
 - Any of the `seven_day_*` windows may be `null`.
 
 Client formatting responsibilities:
@@ -160,9 +165,92 @@ Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, write
 {"type":"setConfig","key":"tokenSource","value":"opencode"}
 ```
 
-- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`; `tokenSource` → `claude-code`, `opencode`
+- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`; `tokenSource` → `claude-code`, `opencode`; `autoCheckUpdates` → `true`, `false`
 - Server **rejects** any value outside the canonical enum (logs warning, config unchanged)
 - Do NOT change the raw-broadcast shape without updating both `bin/ai-gauge-waybar` and `macos/AIGauge/Sources/AIGauge/UsageModel.swift` in the same commit.
+
+### Update message types (server → all clients)
+
+Broadcast when the daemon detects or performs updates.
+
+#### `updateAvailable`
+```json
+{"type":"updateAvailable","currentVersion":"1.1.1","latestVersion":"2.0.0","changelogUrl":"https://github.com/mere1y/ai-gauge/releases/tag/v2.0.0"}
+```
+
+#### `updateInstalling`
+```json
+{"type":"updateInstalling","latestVersion":"2.0.0"}
+```
+
+#### `updateFailed`
+```json
+{"type":"updateFailed","reason":"permission","command":"npm install -g ai-gauge","clipboardCopied":true}
+```
+`reason` values: `permission`, `tool-missing`, `timeout`, `not-found`, `network`, `unknown`, `manual-required`
+
+#### `updateComplete`
+```json
+{"type":"updateComplete","reason":"completed","installedVersion":"2.0.0"}
+```
+After this broadcast, daemon calls `process.exit(0)`. systemd/launchd restart it automatically.
+
+#### `updateCheckFailed`
+```json
+{"type":"updateCheckFailed","reason":"timeout"}
+```
+
+#### `updateAlreadyInProgress`
+```json
+{"type":"updateAlreadyInProgress"}
+```
+
+### Client → Server commands (inbound)
+
+#### `doUpdate`
+```json
+{"type":"doUpdate"}
+```
+Triggers daemon to detect install source, spawn the update command, and broadcast state transitions.
+
+#### `checkUpdate`
+```json
+{"type":"checkUpdate"}
+```
+Triggers immediate manual update check (bypasses `autoCheckUpdates` setting but respects `NO_UPDATE_NOTIFIER`).
+
+### Update system env vars
+
+- `NO_UPDATE_NOTIFIER=1` — disable all update checks (also respected by CI auto-detection)
+- `CI` / `CONTINUOUS_INTEGRATION` / `GITHUB_ACTIONS` / `GITLAB_CI` / `CIRCLECI` / `JENKINS_HOME` / `BUILDKITE` / `DRONE` / `TRAVIS` — any truthy value disables update checks
+- `AIGAUGE_REGISTRY_URL` — override npm registry URL (testing only, default: `https://registry.npmjs.org`)
+- `AIGAUGE_INSTALL_SOURCE` — override detected install source: `npm|bun|pnpm|brew|yarn` (testing only)
+- `AIGAUGE_NPM_COMMAND` — override npm binary path (testing only, e.g., `/tmp/fake-npm.sh`)
+- `AIGAUGE_UPDATING=1` — set by daemon during spawn; cleared on restart
+- `AIGAUGE_UPDATE_CHECK_INITIAL_DELAY_MS` — override initial check delay (testing)
+- `AIGAUGE_UPDATE_CHECK_INTERVAL_MS` — override check interval (testing)
+- `AIGAUGE_TEST_UPDATE_AVAILABLE=1` — macOS menubar test hook: injects fake update available state (also set `AIGAUGE_TEST_LATEST_VERSION=x.y.z`)
+- `AIGAUGE_TEST_UPDATE_INSTALLING=1` — macOS menubar test hook: injects installing state
+- `AIGAUGE_TEST_UPDATE_FAILED=<reason>` — macOS menubar test hook: injects failed state
+
+Note: launch `.app` directly via `bin/AIGauge.app/Contents/MacOS/AIGauge` for env hooks to work (not via `open bin/AIGauge.app`).
+
+### Update system architecture
+
+```
+Update Check Flow:
+
+bin/ai-gauge-server
+  ├── checks registry.npmjs.org every 24h (30s initial delay)
+  ├── broadcasts {type:"updateAvailable",...} to all WS clients
+  │     ├── bin/ai-gauge-waybar → shows ⬆ in waybar text, CSS class update-available
+  │     └── bin/AIGauge.app → shows Update badge + "Update to vX.Y.Z" menu item
+  └── on doUpdate command:
+        ├── detects install source (npm/bun/pnpm/brew)
+        ├── spawns install command (or clipboard fallback for brew)
+        └── broadcasts updateInstalling → updateComplete/updateFailed
+              └── daemon self-restarts via process.exit(0) on success
+```
 
 ## Setup / uninstall — non-obvious details
 
