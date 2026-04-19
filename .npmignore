@@ -1,2 +1,7 @@
 .sisyphus/
 assets/
+lib/*.test.js
+test/
+macos/
+scripts/
+.github/
