@@ -1,6 +1,6 @@
 {
   "name": "ai-gauge",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Real-time Claude Code & OpenCode usage monitor. Native menubar (macOS), Waybar module (Linux), StreamDock plugin. Rate limits, alerts, countdowns.",
   "license": "MIT",
   "repository": {

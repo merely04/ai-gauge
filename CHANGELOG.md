@@ -5,6 +5,21 @@ All notable changes to ai-gauge are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-04-19
+
+### Fixed
+
+- **About modal**: version was hard-coded to `1.0.0` in `Info.plist` and did
+  not reflect the installed version. The build script now auto-stamps
+  `CFBundleVersion` and `CFBundleShortVersionString` from `package.json`
+  via `plutil`, so the About panel always matches the running version.
+- **Credits text**: refreshed to describe current capabilities (5-hour +
+  weekly countdowns, notifications, in-app updates) and correct repo link.
+- **Menu alignment**: the inline "Auto-check for updates" Toggle rendered
+  with a checkmark that horizontally offset the text of neighbouring menu
+  items. Replaced with an On/Off submenu mirroring the "Change plan" and
+  "Change token source" patterns — main menu items are now flush-aligned.
+
 ## [1.2.0] — 2026-04-19
 
 ### Added
