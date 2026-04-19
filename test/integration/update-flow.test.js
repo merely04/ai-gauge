@@ -7,8 +7,6 @@ const REPO_ROOT = join(import.meta.dir, '..', '..');
 const SERVER_BIN = join(REPO_ROOT, 'bin', 'ai-gauge-server');
 const SEND_WS = join(REPO_ROOT, 'lib', 'send-ws.js');
 const PACKAGE_VERSION = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')).version;
-const WS_PORT = 19876;
-
 function freePort() {
   return 19000 + Math.floor(Math.random() * 800);
 }
@@ -33,10 +31,10 @@ async function waitFor(predicate, { timeoutMs = 5000, intervalMs = 50 } = {}) {
   return false;
 }
 
-async function listenBroadcasts({ limitMs = 2000, filter = null } = {}) {
+async function listenBroadcasts({ wsPort, limitMs = 2000, filter = null } = {}) {
   return new Promise((resolve) => {
     const messages = [];
-    const ws = new WebSocket(`ws://localhost:${WS_PORT}`);
+    const ws = new WebSocket(`ws://localhost:${wsPort}`);
     const timer = setTimeout(() => {
       try { ws.close(); } catch {}
       resolve(messages);
@@ -57,7 +55,7 @@ async function listenBroadcasts({ limitMs = 2000, filter = null } = {}) {
   });
 }
 
-function startServer({ home, registryPort, env = {} }) {
+function startServer({ home, registryPort, wsPort, env = {} }) {
   const child = spawn('bun', [SERVER_BIN], {
     env: {
       HOME: home,
@@ -65,6 +63,7 @@ function startServer({ home, registryPort, env = {} }) {
       XDG_CACHE_HOME: join(home, '.cache'),
       XDG_RUNTIME_DIR: join(home, '.state'),
       TMPDIR: join(home, '.state'),
+      AIGAUGE_WS_PORT: String(wsPort),
       AIGAUGE_REGISTRY_URL: `http://localhost:${registryPort}`,
       AIGAUGE_UPDATE_CHECK_INITIAL_DELAY_MS: '200',
       AIGAUGE_UPDATE_CHECK_INTERVAL_MS: '5000',
@@ -109,13 +108,14 @@ function isPortInUse(port) {
 describe('update flow — end-to-end integration', () => {
   let home;
   let registryPort;
+  let wsPort;
   let registry;
   let server;
 
   beforeEach(async () => {
-    while (await isPortInUse(WS_PORT)) {
-      await new Promise((r) => setTimeout(r, 200));
-    }
+    do {
+      wsPort = freePort();
+    } while (await isPortInUse(wsPort));
 
     registryPort = freePort();
     home = `/tmp/ai-gauge-it-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -133,12 +133,12 @@ describe('update flow — end-to-end integration', () => {
 
   test('broadcasts updateAvailable when registry has newer version', async () => {
     registry = startMockRegistry({ port: registryPort, latestVersion: '99.0.0' });
-    server = startServer({ home, registryPort, env: { CI: '' } });
+    server = startServer({ home, registryPort, wsPort, env: { CI: '' } });
 
     const ready = await waitFor(() => server.stderr.includes('listening on ws://'));
     expect(ready).toBe(true);
 
-    const messages = await listenBroadcasts({ limitMs: 3000, filter: 'updateAvailable' });
+    const messages = await listenBroadcasts({ wsPort, limitMs: 3000, filter: 'updateAvailable' });
     expect(messages.length).toBeGreaterThanOrEqual(1);
     expect(messages[0].latestVersion).toBe('99.0.0');
     expect(messages[0].type).toBe('updateAvailable');
@@ -147,7 +147,7 @@ describe('update flow — end-to-end integration', () => {
 
   test('scheduled check is skipped in CI environment', async () => {
     registry = startMockRegistry({ port: registryPort, latestVersion: '99.0.0' });
-    server = startServer({ home, registryPort, env: { CI: 'true' } });
+    server = startServer({ home, registryPort, wsPort, env: { CI: 'true' } });
 
     const ready = await waitFor(() => server.stderr.includes('listening on ws://'));
     expect(ready).toBe(true);
@@ -164,7 +164,7 @@ describe('update flow — end-to-end integration', () => {
     );
 
     registry = startMockRegistry({ port: registryPort, latestVersion: '0.0.1' });
-    server = startServer({ home, registryPort, env: { CI: '' } });
+    server = startServer({ home, registryPort, wsPort, env: { CI: '' } });
 
     const ready = await waitFor(() => server.stderr.includes('listening on ws://'));
     expect(ready).toBe(true);
@@ -188,6 +188,7 @@ describe('update flow — end-to-end integration', () => {
     server = startServer({
       home,
       registryPort,
+      wsPort,
       env: { CI: '', AIGAUGE_UPDATE_CHECK_INITIAL_DELAY_MS: '1000000' },
     });
 
@@ -199,7 +200,7 @@ describe('update flow — end-to-end integration', () => {
     const proc = Bun.spawn(['bun', SEND_WS], {
       stdin: 'pipe',
       stdout: 'pipe',
-      env: { ...process.env, AIGAUGE_WS_URL: `ws://localhost:${WS_PORT}` },
+      env: { ...process.env, AIGAUGE_WS_URL: `ws://localhost:${wsPort}` },
     });
     proc.stdin.write('{"type":"setConfig","key":"autoCheckUpdates","value":false}');
     proc.stdin.end();
@@ -214,18 +215,18 @@ describe('update flow — end-to-end integration', () => {
 
   test('dismissUpdate suppresses updateAvailable for the dismissed version', async () => {
     registry = startMockRegistry({ port: registryPort, latestVersion: '99.0.0' });
-    server = startServer({ home, registryPort, env: { CI: '' } });
+    server = startServer({ home, registryPort, wsPort, env: { CI: '' } });
 
     const ready = await waitFor(() => server.stderr.includes('listening on ws://'));
     expect(ready).toBe(true);
 
-    const firstRound = await listenBroadcasts({ limitMs: 2500, filter: 'updateAvailable' });
+    const firstRound = await listenBroadcasts({ wsPort, limitMs: 2500, filter: 'updateAvailable' });
     expect(firstRound.length).toBeGreaterThanOrEqual(1);
 
     const dismissProc = Bun.spawn(['bun', SEND_WS], {
       stdin: 'pipe',
       stdout: 'pipe',
-      env: { ...process.env, AIGAUGE_WS_URL: `ws://localhost:${WS_PORT}` },
+      env: { ...process.env, AIGAUGE_WS_URL: `ws://localhost:${wsPort}` },
     });
     dismissProc.stdin.write('{"type":"dismissUpdate","version":"99.0.0"}');
     dismissProc.stdin.end();
@@ -237,7 +238,7 @@ describe('update flow — end-to-end integration', () => {
     );
     expect(dismissed).toBe(true);
 
-    const reconnectPayloads = await listenBroadcasts({ limitMs: 1000, filter: 'updateAvailable' });
+    const reconnectPayloads = await listenBroadcasts({ wsPort, limitMs: 1000, filter: 'updateAvailable' });
     expect(reconnectPayloads.length).toBe(0);
   }, 20000);
 
@@ -252,6 +253,7 @@ describe('update flow — end-to-end integration', () => {
     server = startServer({
       home,
       registryPort,
+      wsPort,
       env: { CI: 'true', AIGAUGE_UPDATE_CHECK_INITIAL_DELAY_MS: '10000000' },
     });
 
@@ -260,7 +262,7 @@ describe('update flow — end-to-end integration', () => {
 
     await new Promise((r) => setTimeout(r, 500));
 
-    const messages = await listenBroadcasts({ limitMs: 1500, filter: 'updateAvailable' });
+    const messages = await listenBroadcasts({ wsPort, limitMs: 1500, filter: 'updateAvailable' });
     expect(messages.length).toBeGreaterThanOrEqual(1);
     expect(messages[0].latestVersion).toBe('99.0.0');
   }, 15000);

@@ -13,7 +13,7 @@ const CREDS_FILE = `${process.env.HOME}/.claude/.credentials.json`;
 const OPENCODE_AUTH_FILE_PRIMARY = `${process.env.HOME}/.local/share/opencode/auth.json`;
 const OPENCODE_AUTH_FILE_MAC = `${process.env.HOME}/Library/Application Support/opencode/auth.json`;
 const STATE_DIR = `${process.platform === 'darwin' ? (process.env.TMPDIR || '/tmp') : (process.env.XDG_RUNTIME_DIR || '/tmp')}/ai-gauge`;
-const WS_PORT = 19876;
+const WS_PORT = Number(Bun.env.AIGAUGE_WS_PORT) || 19876;
 const POLL_INTERVAL = 60_000;
 const BACKOFF_INTERVAL = 300_000;
 const API_URL = 'https://api.anthropic.com/api/oauth/usage';
