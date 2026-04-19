@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Read update state from runtime dir
+UPDATE_STATE_FILE="${XDG_RUNTIME_DIR:-/tmp}/ai-gauge/update-state.json"
+UPDATE_VERSION=""
+UPDATE_INSTALLING=false
+UPDATE_ERROR=""
+UPDATE_CHANGELOG_URL=""
+
 # Resolve package directory (follows symlinks from global bin).
 if readlink -f "${BASH_SOURCE[0]}" >/dev/null 2>&1; then
     SELF="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -12,6 +19,13 @@ source "$SCRIPT_DIR/../lib/bash-helpers.sh"
 
 STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/ai-gauge"
 mkdir -p "$STATE_DIR"
+
+if [[ -f "$UPDATE_STATE_FILE" ]]; then
+    UPDATE_VERSION=$(jq -r '.version // empty' "$UPDATE_STATE_FILE" 2>/dev/null || true)
+    UPDATE_INSTALLING=$(jq -r '.installing // false' "$UPDATE_STATE_FILE" 2>/dev/null || echo "false")
+    UPDATE_ERROR=$(jq -r '.error // empty' "$UPDATE_STATE_FILE" 2>/dev/null || true)
+    UPDATE_CHANGELOG_URL=$(jq -r '.changelogUrl // empty' "$UPDATE_STATE_FILE" 2>/dev/null || true)
+fi
 
 # Build usage summary for clipboard
 build_summary() {
@@ -35,15 +49,62 @@ if is_macos; then
 fi
 
 # Menu
-choice=$(printf '%s\n' \
-    "↻  Refresh Now" \
-    "  Copy Usage" \
-    "  Raw Data" \
-    "⚙  Settings" \
-    | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 300 -p "AI Gauge" 2>/dev/null
-) || exit 0
+ITEMS=()
 
-case "$choice" in
+# Update items
+if [[ "$UPDATE_INSTALLING" == "true" ]]; then
+    ITEMS+=("⏳ Updating...")
+elif [[ -n "$UPDATE_VERSION" ]]; then
+    ITEMS+=("✨ Update to v${UPDATE_VERSION}")
+fi
+if [[ -n "$UPDATE_ERROR" ]]; then
+    ITEMS+=("⚠ Update failed: ${UPDATE_ERROR}")
+fi
+if [[ -n "$UPDATE_CHANGELOG_URL" ]]; then
+    ITEMS+=("📄 View changelog")
+fi
+ITEMS+=("🔍 Check for updates")
+ITEMS+=("↻  Refresh Now")
+ITEMS+=("  Copy Usage")
+ITEMS+=("  Raw Data")
+ITEMS+=("⚙  Settings")
+
+if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    printf '%s\n' "${ITEMS[@]}"
+    SELECTED="${SELECTED_ITEM:-}"
+elif [[ -n "${SELECTED_ITEM:-}" ]]; then
+    SELECTED="$SELECTED_ITEM"
+else
+    SELECTED=$(printf '%s\n' "${ITEMS[@]}" | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 300 -p "AI Gauge" 2>/dev/null) || exit 0
+fi
+
+case "$SELECTED" in
+    "✨ Update to v"*)
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            echo 'WOULD_SEND: {"type":"doUpdate"}'
+        else
+            echo '{"type":"doUpdate"}' | bun lib/send-ws.js
+        fi
+        ;;
+    "🔍 Check for updates")
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            echo 'WOULD_SEND: {"type":"checkUpdate"}'
+        else
+            echo '{"type":"checkUpdate"}' | bun lib/send-ws.js
+        fi
+        ;;
+    "📄 View changelog")
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            echo "WOULD_OPEN: $UPDATE_CHANGELOG_URL"
+        else
+            xdg-open "$UPDATE_CHANGELOG_URL" 2>/dev/null || true
+        fi
+        ;;
+    "⚠ Update failed: "*)
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            echo 'WOULD_COPY: npm install -g ai-gauge'
+        fi
+        ;;
     *"Refresh"*)
         bun -e 'const ws = new WebSocket("ws://localhost:19876"); ws.onopen = () => { ws.send(JSON.stringify({command:"refresh"})); ws.close(); };'
         notify-send -t 2000 -a "AI Gauge" "Refreshing usage data..."

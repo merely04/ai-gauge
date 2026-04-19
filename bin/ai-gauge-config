@@ -38,6 +38,14 @@ restart_server() {
     systemctl --user restart ai-gauge-server 2>/dev/null || true
 }
 
+send_ws() {
+    if [[ "${DRY_RUN:-0}" == "1" ]]; then
+        echo "WOULD_SEND: $1"
+    else
+        echo "$1" | bun "$SCRIPT_DIR/../lib/send-ws.js"
+    fi
+}
+
 # CLI mode
 if [[ "${1:-}" == "get" ]]; then
     if [[ -n "${2:-}" ]]; then
@@ -53,6 +61,23 @@ if [[ "${1:-}" == "set" ]]; then
         echo "Usage: ai-gauge-config set <key> <value>" >&2
         exit 1
     fi
+    if [[ "$2" == "autoCheckUpdates" ]]; then
+        if [[ "$3" == "true" ]]; then
+            json_value="true"
+        elif [[ "$3" == "false" ]]; then
+            json_value="false"
+        else
+            echo "Error: autoCheckUpdates must be true or false" >&2
+            exit 1
+        fi
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            echo "WOULD_SET: autoCheckUpdates=$3"
+        else
+            send_ws "{\"type\":\"setConfig\",\"key\":\"autoCheckUpdates\",\"value\":${json_value}}"
+        fi
+        echo "Set autoCheckUpdates = $3"
+        exit 0
+    fi
     set_field "$2" "$3"
     echo "Set $2 = $3"
     restart_server
@@ -61,24 +86,38 @@ fi
 
 # Interactive mode (walker UI)
 # Skip walker UI on macOS
-if is_macos; then
+if is_macos && [[ "${DRY_RUN:-0}" != "1" && -z "${SELECTED_ITEM:-}" ]]; then
     echo "Config UI available via menubar right-click submenu."
     echo "For CLI use: ai-gauge-config set <key> <value>"
-    echo "  Keys: plan (max|pro|team|enterprise|unknown), tokenSource (claude-code|opencode)"
+    echo "  Keys: plan (max|pro|team|enterprise|unknown), tokenSource (claude-code|opencode), autoCheckUpdates (true|false)"
     exit 0
 fi
 
 current_source=$(get_field tokenSource)
 current_plan=$(get_field plan)
+current_auto_check_updates=$(get_field autoCheckUpdates)
 
-choice=$(printf '%s\n' \
-    "🔑  Token Source: ${current_source:-claude-code}" \
-    "📋  Plan: ${current_plan:-unknown}" \
-    | omarchy-launch-walker --dmenu --width 260 --minheight 1 --maxheight 200 -p "Settings" 2>/dev/null
-) || exit 0
+items=(
+    "🔑  Token Source: ${current_source:-claude-code}"
+    "📋  Plan: ${current_plan:-unknown}"
+    "🔄  Auto-check updates: $(if [[ "${current_auto_check_updates:-true}" == "true" ]]; then echo ON; else echo OFF; fi)"
+)
+
+if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    printf '%s\n' "${items[@]}"
+    choice="${SELECTED_ITEM:-}"
+elif [[ -n "${SELECTED_ITEM:-}" ]]; then
+    choice="$SELECTED_ITEM"
+else
+    choice=$(printf '%s\n' "${items[@]}" | omarchy-launch-walker --dmenu --width 260 --minheight 1 --maxheight 200 -p "Settings" 2>/dev/null) || exit 0
+fi
 
 case "$choice" in
     *"Token Source"*)
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            echo "WOULD_SET: tokenSource"
+            exit 0
+        fi
         new_source=$(printf '%s\n' "claude-code" "opencode" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 150 -p "Token Source" 2>/dev/null
         ) || exit 0
@@ -87,11 +126,28 @@ case "$choice" in
         restart_server
         ;;
     *"Plan"*)
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            echo "WOULD_SET: plan"
+            exit 0
+        fi
         new_plan=$(printf '%s\n' "max" "pro" "team" "enterprise" "unknown" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null
         ) || exit 0
         set_field "plan" "$new_plan"
         notify-send -t 2000 -a "AI Gauge" "Plan: $new_plan"
         restart_server
+        ;;
+    *"Auto-check updates"*)
+        if [[ "${current_auto_check_updates:-true}" == "true" ]]; then
+            new_auto_check_updates=false
+        else
+            new_auto_check_updates=true
+        fi
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            echo "WOULD_SET: autoCheckUpdates=$new_auto_check_updates"
+        else
+            send_ws "{\"type\":\"setConfig\",\"key\":\"autoCheckUpdates\",\"value\":${new_auto_check_updates}}"
+        fi
+        echo "Set autoCheckUpdates = $new_auto_check_updates"
         ;;
 esac

@@ -291,6 +291,18 @@ with open(path, 'w') as f:
   color: #c5a555;
 }
 
+#custom-ai-gauge.update-available {
+  color: #f9a825;
+}
+
+#custom-ai-gauge.updating {
+  color: #29b6f6;
+}
+
+#custom-ai-gauge.update-failed {
+  color: #ef5350;
+}
+
 #custom-ai-gauge.critical {
   color: #a55555;
 }

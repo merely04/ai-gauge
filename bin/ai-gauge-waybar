@@ -4,6 +4,13 @@ const WS_URL = Bun.env.AIGAUGE_WS_URL || 'ws://localhost:19876';
 const RECONNECT_DELAY = 5_000;
 
 let lastUsageCache = null;
+let lastUpdateState = {
+  available: false,
+  version: null,
+  installing: false,
+  error: null,
+  changelogUrl: null,
+};
 
 function getRemainingSeconds(resetsAt) {
   if (!resetsAt || resetsAt === 'null') return null;
@@ -104,6 +111,22 @@ function render(data) {
   tooltip += '\n───────────────';
   tooltip += `\nPlan: ${plan}`;
 
+  if (lastUpdateState.installing) {
+    cssClass = 'updating';
+    text = '✦ updating...';
+  } else if (lastUpdateState.available && lastUpdateState.version) {
+    text += ' ⬆';
+    cssClass = cssClass === 'normal' ? 'update-available' : `${cssClass} update-available`;
+    tooltip += `\n───────────────\nUpdate: v${lastUpdateState.version} available`;
+    if (lastUpdateState.changelogUrl) {
+      tooltip += `\n${lastUpdateState.changelogUrl}`;
+    }
+  } else if (lastUpdateState.error) {
+    text += ' ⚠';
+    cssClass = cssClass === 'normal' ? 'update-failed' : `${cssClass} update-failed`;
+    tooltip += `\n───────────────\nUpdate failed: ${lastUpdateState.error}`;
+  }
+
   process.stdout.write(JSON.stringify({ text, class: cssClass, tooltip }) + '\n');
 }
 
@@ -116,7 +139,48 @@ function printWaiting() {
 }
 
 function handleTypedMessage(data) {
-  process.stderr.write('[ai-gauge-waybar] ignoring typed: ' + data.type + '\n');
+  switch (data.type) {
+    case 'updateAvailable':
+      lastUpdateState = {
+        available: true,
+        version: data.latestVersion,
+        installing: false,
+        error: null,
+        changelogUrl: data.changelogUrl || null,
+      };
+      renderWithCurrentState();
+      break;
+    case 'updateInstalling':
+      lastUpdateState = { ...lastUpdateState, installing: true, error: null };
+      renderWithCurrentState();
+      break;
+    case 'updateFailed':
+      lastUpdateState = { ...lastUpdateState, installing: false, error: data.reason };
+      renderWithCurrentState();
+      break;
+    case 'updateComplete':
+      lastUpdateState = {
+        available: false,
+        version: null,
+        installing: false,
+        error: null,
+        changelogUrl: null,
+      };
+      renderWithCurrentState();
+      break;
+    case 'updateCheckFailed':
+    case 'updateAlreadyInProgress':
+      process.stderr.write('[ai-gauge-waybar] ignoring typed: ' + data.type + '\n');
+      break;
+    default:
+      process.stderr.write('[ai-gauge-waybar] ignoring typed: ' + data.type + '\n');
+  }
+}
+
+function renderWithCurrentState() {
+  if (lastUsageCache) {
+    render(lastUsageCache);
+  }
 }
 
 function connect() {
