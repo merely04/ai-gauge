@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 
-const WS_URL = 'ws://localhost:19876';
+const WS_URL = Bun.env.AIGAUGE_WS_URL || 'ws://localhost:19876';
 const RECONNECT_DELAY = 5_000;
+
+let lastUsageCache = null;
 
 function getRemainingSeconds(resetsAt) {
   if (!resetsAt || resetsAt === 'null') return null;
@@ -113,6 +115,10 @@ function printWaiting() {
   }) + '\n');
 }
 
+function handleTypedMessage(data) {
+  process.stderr.write('[ai-gauge-waybar] ignoring typed: ' + data.type + '\n');
+}
+
 function connect() {
   let closed = false;
   const ws = new WebSocket(WS_URL);
@@ -120,7 +126,13 @@ function connect() {
   ws.onmessage = (event) => {
     try {
       const payload = typeof event.data === 'string' ? event.data : String(event.data);
-      render(JSON.parse(payload));
+      const data = JSON.parse(payload);
+      if (data && typeof data.type === 'string') {
+        handleTypedMessage(data);
+      } else {
+        lastUsageCache = data;
+        render(data);
+      }
     } catch {}
   };
 
