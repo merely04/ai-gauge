@@ -213,6 +213,31 @@ ai-gauge-config set autoCheckUpdates false
 
 **CI environments**: Update checks are automatically skipped when any of these env vars are set: `CI`, `CONTINUOUS_INTEGRATION`, `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `JENKINS_HOME`, `BUILDKITE`, `DRONE`, `TRAVIS`.
 
+### Dismiss a specific version
+
+To silence a specific version without disabling checks entirely:
+
+```bash
+echo '{"type":"dismissUpdate","version":"2.0.0"}' | bun lib/send-ws.js
+```
+
+The notification is suppressed until a newer version appears or you run:
+
+```bash
+echo '{"type":"undismissUpdate"}' | bun lib/send-ws.js
+```
+
+### Running without a service manager (Docker, minimal Linux)
+
+ai-gauge is designed around systemd (Linux) and launchd (macOS). After a successful update, the daemon calls `process.exit(0)` and relies on the service manager to restart it.
+
+If you run the daemon in an environment without a service manager — e.g. a Docker container, `tmux` session, or PID 1 of a minimal Linux install — the process will terminate on update and **not** come back automatically. Either:
+
+- Disable auto-update: `ai-gauge-config set autoCheckUpdates false`
+- Wrap the daemon in your own restart loop (supervisord, runit, `while true; do ai-gauge-server; sleep 1; done`)
+
+The update still works in the sense that the new version is installed via `npm`/`bun`/`pnpm`, but the running process is not replaced until you manually start it again.
+
 ## StreamDock (Fifine D6)
 
 The plugin shows usage stats on a physical key of the Fifine AmpliGame D6 stream controller.

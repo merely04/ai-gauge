@@ -219,6 +219,18 @@ Triggers daemon to detect install source, spawn the update command, and broadcas
 ```
 Triggers immediate manual update check (bypasses `autoCheckUpdates` setting but respects `NO_UPDATE_NOTIFIER`).
 
+#### `dismissUpdate`
+```json
+{"type":"dismissUpdate","version":"2.0.0"}
+```
+Silences `updateAvailable` broadcasts for the given version. `version` is optional — if omitted, dismisses the currently-notified version. Persisted in `update-check.json` cache; auto-clears when a newer version is released.
+
+#### `undismissUpdate`
+```json
+{"type":"undismissUpdate"}
+```
+Clears the dismiss marker and triggers a fresh `checkUpdate` so the notification can return.
+
 ### Update system env vars
 
 - `NO_UPDATE_NOTIFIER=1` — disable all update checks (also respected by CI auto-detection)
@@ -229,6 +241,9 @@ Triggers immediate manual update check (bypasses `autoCheckUpdates` setting but 
 - `AIGAUGE_UPDATING=1` — set by daemon during spawn; cleared on restart
 - `AIGAUGE_UPDATE_CHECK_INITIAL_DELAY_MS` — override initial check delay (testing)
 - `AIGAUGE_UPDATE_CHECK_INTERVAL_MS` — override check interval (testing)
+- `AIGAUGE_UPDATE_SPAWN_TIMEOUT_MS` — override update spawn timeout (default 120000)
+- `AIGAUGE_UPDATE_FETCH_TIMEOUT_MS` — override registry fetch timeout (default 10000)
+- `AIGAUGE_LOG_FORMAT=json` — switches daemon logs from human-readable text to structured JSON (one record per line: `ts`, `level`, `component`, `event`, extra fields)
 - `AIGAUGE_TEST_UPDATE_AVAILABLE=1` — macOS menubar test hook: injects fake update available state (also set `AIGAUGE_TEST_LATEST_VERSION=x.y.z`)
 - `AIGAUGE_TEST_UPDATE_INSTALLING=1` — macOS menubar test hook: injects installing state
 - `AIGAUGE_TEST_UPDATE_FAILED=<reason>` — macOS menubar test hook: injects failed state
