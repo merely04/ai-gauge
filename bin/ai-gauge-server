@@ -1,25 +1,17 @@
 #!/usr/bin/env bun
 
 import { systemNotify } from '../lib/notify.js';
-import {
-  checkForUpdate,
-  shouldSkipUpdateCheck,
-  getCacheFilePath,
-  readCache,
-  writeCache,
-} from '../lib/check-update.js';
-import { runUpdate } from '../lib/do-update.js';
-import { detectInstallSource } from '../lib/install-source.js';
+import { readConfig, validateConfigChange, applyConfigChange, CONFIG_PATH } from '../lib/config.js';
+import { addClient, removeClient, broadcast, sendToClient } from '../lib/broadcast.js';
+import { createThresholdNotifier } from '../lib/threshold-notify.js';
+import { createUpdateLifecycle } from '../lib/update-lifecycle.js';
 import { atomicWriteJSON } from '../lib/atomic-write.js';
 import { readFileSync } from 'node:fs';
-import { promises as fsPromises } from 'node:fs';
 import { join } from 'node:path';
-import net from 'node:net';
 
 const CREDS_FILE = `${process.env.HOME}/.claude/.credentials.json`;
 const OPENCODE_AUTH_FILE_PRIMARY = `${process.env.HOME}/.local/share/opencode/auth.json`;
 const OPENCODE_AUTH_FILE_MAC = `${process.env.HOME}/Library/Application Support/opencode/auth.json`;
-const CONFIG_FILE = `${process.env.HOME}/.config/ai-gauge/config.json`;
 const STATE_DIR = `${process.platform === 'darwin' ? (process.env.TMPDIR || '/tmp') : (process.env.XDG_RUNTIME_DIR || '/tmp')}/ai-gauge`;
 const WS_PORT = 19876;
 const POLL_INTERVAL = 60_000;
@@ -34,26 +26,11 @@ const UPDATE_SPAWN_TIMEOUT_MS = Number(Bun.env.AIGAUGE_UPDATE_SPAWN_TIMEOUT_MS) 
 const UPDATE_FETCH_TIMEOUT_MS = Number(Bun.env.AIGAUGE_UPDATE_FETCH_TIMEOUT_MS) || (10 * 1000);
 const REGISTRY_URL = Bun.env.AIGAUGE_REGISTRY_URL || 'https://registry.npmjs.org';
 
-const changelogUrlFor = (version) => `https://github.com/mere1y/ai-gauge/releases/tag/v${version}`;
-
 let claudeVersion = '2.1.100';
 let cachedData = null;
 let currentInterval = POLL_INTERVAL;
-let alerted80 = false;
-let alerted95 = false;
 let server;
 let fetchInFlight = null;
-const connectedClients = new Set();
-
-let updateState = {
-  checking: false,
-  installing: false,
-  lastCheckedAt: null,
-  latestVersion: null,
-  lastNotifiedVersion: null,
-  error: null,
-};
-let updateCheckTimer = null;
 
 function logError(message) {
   console.error(message);
@@ -61,19 +38,6 @@ function logError(message) {
 
 function isTokenValid(expiresAt) {
   return typeof expiresAt === 'number' && expiresAt > Date.now();
-}
-
-async function readConfig() {
-  try {
-    const data = await Bun.file(CONFIG_FILE).json();
-    return {
-      tokenSource: data?.tokenSource ?? 'claude-code',
-      plan: data?.plan ?? null,
-      autoCheckUpdates: data?.autoCheckUpdates ?? true,
-    };
-  } catch {
-    return { tokenSource: 'claude-code', plan: null, autoCheckUpdates: true };
-  }
 }
 
 async function readClaudeCodeCredentials() {
@@ -137,7 +101,7 @@ async function detectClaudeVersion() {
   }
 }
 
-async function atomicWrite(data) {
+async function writeUsageAtomic(data) {
   await atomicWriteJSON(`${STATE_DIR}/usage.json`, data, {
     validate: (parsed) => !!parsed?.five_hour,
   });
@@ -184,52 +148,27 @@ function formatDaysRemaining(resetsAt) {
   return days > 0 ? String(days) : '<1';
 }
 
-function broadcastToAll(data) {
-  if (!data) return;
-  const payload = JSON.stringify(data);
-  for (const ws of connectedClients) {
-    try {
-      ws.send(payload);
-    } catch {}
-  }
-}
+const thresholdNotifier = createThresholdNotifier({
+  broadcast,
+  systemNotify,
+  formatDuration,
+  formatDaysRemaining,
+});
 
-async function checkNotification() {
-  if (!cachedData?.five_hour) return;
-  const fiveInt = Math.round(Number(cachedData.five_hour.utilization) || 0);
-
-  if (fiveInt >= 80) {
-    if (!alerted80) {
-      const remaining = formatDuration(cachedData.five_hour.resets_at);
-      await systemNotify({
-        title: 'AI Gauge',
-        message: `5-hour limit at ${fiveInt}%\nResets in ${remaining}`,
-        urgency: 'critical',
-      });
-      alerted80 = true;
-      const daysRemaining = formatDaysRemaining(cachedData?.seven_day?.resets_at);
-      broadcastToAll({
-        type: 'notify',
-        threshold: 80,
-        percentage: fiveInt,
-        message: `Usage at 80%, ~${daysRemaining} days remaining`,
-      });
-    }
-    if (fiveInt >= 95 && !alerted95) {
-      alerted95 = true;
-      const daysRemaining = formatDaysRemaining(cachedData?.seven_day?.resets_at);
-      broadcastToAll({
-        type: 'notify',
-        threshold: 95,
-        percentage: fiveInt,
-        message: `Usage at 95%, ~${daysRemaining} days remaining`,
-      });
-    }
-  } else if (fiveInt < 50) {
-    alerted80 = false;
-    alerted95 = false;
-  }
-}
+const updateLifecycle = createUpdateLifecycle({
+  packageVersion: PACKAGE_VERSION,
+  registryUrl: REGISTRY_URL,
+  stateDir: STATE_DIR,
+  installBinaryDir: import.meta.dir,
+  fetchTimeoutMs: UPDATE_FETCH_TIMEOUT_MS,
+  spawnTimeoutMs: UPDATE_SPAWN_TIMEOUT_MS,
+  intervalMs: UPDATE_CHECK_INTERVAL_MS,
+  initialDelayMs: UPDATE_CHECK_INITIAL_DELAY_MS,
+  readConfig,
+  broadcast,
+  systemNotify,
+  logger: logError,
+});
 
 async function fetchUsage() {
   const creds = await readCredentials();
@@ -266,7 +205,7 @@ async function fetchUsage() {
       },
     };
 
-    await atomicWrite(cachedData);
+    await writeUsageAtomic(cachedData);
     return true;
   } catch (err) {
     logError(`fetch failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -281,8 +220,8 @@ async function fetchAndHandleBroadcast() {
     const success = await fetchUsage();
     if (success) {
       currentInterval = POLL_INTERVAL;
-      broadcastToAll(cachedData);
-      await checkNotification();
+      broadcast(cachedData);
+      await thresholdNotifier.check(cachedData);
     } else {
       currentInterval = BACKOFF_INTERVAL;
     }
@@ -306,153 +245,9 @@ async function refreshNow() {
         fetchedAt: new Date().toISOString(),
       },
     };
-    await atomicWrite(cachedData);
-    broadcastToAll(cachedData);
-    await checkNotification();
-  }
-}
-
-async function writeUpdateStateFile(clear = false) {
-  const stateFile = `${STATE_DIR}/update-state.json`;
-  const state = clear
-    ? { available: false, version: null, installing: false, error: null, changelogUrl: null, lastUpdatedAt: Date.now() }
-    : {
-        available: !!updateState.latestVersion,
-        version: updateState.latestVersion,
-        installing: updateState.installing,
-        error: updateState.error || null,
-        changelogUrl: updateState.latestVersion ? changelogUrlFor(updateState.latestVersion) : null,
-        lastUpdatedAt: Date.now(),
-      };
-  try {
-    await atomicWriteJSON(stateFile, state);
-  } catch (err) {
-    logError(`[update] failed to write state file: ${err?.message || err}`);
-  }
-}
-
-async function doUpdateCheck({ manual = false } = {}) {
-  if (updateState.checking && !manual) return;
-  const config = await readConfig();
-  const { skip, reason } = shouldSkipUpdateCheck(process.env, config);
-
-  if (skip && !manual) {
-    process.stderr.write(`[update] scheduled update check skipped: ${reason}\n`);
-    return;
-  }
-  if (skip && manual) {
-    process.stderr.write(`[update] manual update check skipped: ${reason}\n`);
-    broadcastToAll({ type: 'updateCheckFailed', reason });
-    return;
-  }
-
-  updateState.checking = true;
-  try {
-    const result = await checkForUpdate({
-      currentVersion: PACKAGE_VERSION,
-      registryUrl: REGISTRY_URL,
-      packageName: 'ai-gauge',
-      timeoutMs: UPDATE_FETCH_TIMEOUT_MS,
-    });
-
-    if (result.error) {
-      process.stderr.write(`[update] check failed: ${result.error}\n`);
-      broadcastToAll({ type: 'updateCheckFailed', reason: result.error });
-      return;
-    }
-
-    updateState.lastCheckedAt = Date.now();
-    updateState.latestVersion = result.latestVersion;
-
-    try {
-      writeCache(getCacheFilePath(), {
-        lastCheckedAt: updateState.lastCheckedAt,
-        latestVersion: result.latestVersion,
-        currentVersion: PACKAGE_VERSION,
-      });
-    } catch (err) {
-      logError(`[update] failed to write cache: ${err?.message || err}`);
-    }
-
-    if (!result.updateAvailable) {
-      if (updateState.lastNotifiedVersion) {
-        updateState.lastNotifiedVersion = null;
-        await writeUpdateStateFile(true);
-      }
-      return;
-    }
-
-    if (updateState.lastNotifiedVersion !== result.latestVersion) {
-      broadcastToAll({
-        type: 'updateAvailable',
-        currentVersion: PACKAGE_VERSION,
-        latestVersion: result.latestVersion,
-        changelogUrl: changelogUrlFor(result.latestVersion),
-      });
-      updateState.lastNotifiedVersion = result.latestVersion;
-      await writeUpdateStateFile();
-      if (process.platform === 'linux') {
-        await systemNotify({
-          title: 'AI Gauge Update',
-          message: `v${result.latestVersion} available`,
-          urgency: 'normal',
-        });
-      }
-    }
-  } finally {
-    updateState.checking = false;
-  }
-}
-
-async function doUpdateInstall() {
-  if (updateState.installing) {
-    broadcastToAll({ type: 'updateAlreadyInProgress' });
-    return;
-  }
-
-  updateState.installing = true;
-  updateState.error = null;
-  broadcastToAll({ type: 'updateInstalling', latestVersion: updateState.latestVersion });
-  await writeUpdateStateFile();
-
-  const installSource = detectInstallSource(import.meta.dir);
-
-  const result = await runUpdate({
-    installSource,
-    packageName: 'ai-gauge',
-    timeoutMs: UPDATE_SPAWN_TIMEOUT_MS,
-    env: process.env,
-  });
-
-  if (result.success) {
-    broadcastToAll({ type: 'updateComplete', reason: 'completed' });
-    await writeUpdateStateFile(true);
-    setTimeout(() => process.exit(0), 500);
-  } else {
-    updateState.installing = false;
-    updateState.error = result.reason;
-    broadcastToAll({
-      type: 'updateFailed',
-      reason: result.reason,
-      command: result.command,
-      clipboardCopied: result.clipboardCopied,
-    });
-    await writeUpdateStateFile();
-  }
-}
-
-function scheduleNextUpdateCheck(delayMs) {
-  cancelScheduledUpdateCheck();
-  updateCheckTimer = setTimeout(async () => {
-    await doUpdateCheck({ manual: false });
-    scheduleNextUpdateCheck(UPDATE_CHECK_INTERVAL_MS);
-  }, delayMs);
-}
-
-function cancelScheduledUpdateCheck() {
-  if (updateCheckTimer) {
-    clearTimeout(updateCheckTimer);
-    updateCheckTimer = null;
+    await writeUsageAtomic(cachedData);
+    broadcast(cachedData);
+    await thresholdNotifier.check(cachedData);
   }
 }
 
@@ -463,37 +258,60 @@ async function pollLoop() {
   }
 }
 
-async function isAddressListening(host) {
-  return await new Promise((resolve) => {
-    const socket = net.connect({ host, port: WS_PORT });
-    const done = (value) => {
-      socket.removeAllListeners();
-      socket.destroy();
-      resolve(value);
-    };
-
-    socket.setTimeout(500);
-    socket.once('connect', () => done(true));
-    socket.once('timeout', () => done(false));
-    socket.once('error', (error) => {
-      if (error?.code === 'ECONNREFUSED' || error?.code === 'EHOSTUNREACH' || error?.code === 'ENETUNREACH') {
-        done(false);
-        return;
-      }
-      done(true);
+function ensurePortAvailable() {
+  try {
+    const probe = Bun.listen({
+      hostname: '127.0.0.1',
+      port: WS_PORT,
+      socket: { data() {}, open() {}, close() {}, error() {} },
     });
-  });
-}
-
-async function ensurePortAvailable() {
-  if (await isAddressListening('127.0.0.1')) {
-    logError(`ai-gauge-server: port ${WS_PORT} already in use`);
+    probe.stop(true);
+  } catch (err) {
+    logError(`ai-gauge-server: port ${WS_PORT} already in use (${err?.code || err?.message || err})`);
     process.exit(1);
   }
+}
 
-  if (await isAddressListening('::1')) {
-    logError(`ai-gauge-server: port ${WS_PORT} already in use`);
-    process.exit(1);
+async function handleSetConfig(cmd) {
+  const { key, value } = cmd;
+  const validation = validateConfigChange(key, value);
+  if (!validation.valid) {
+    logError(`[setConfig] rejected: ${validation.reason}`);
+    return;
+  }
+
+  try {
+    const result = await applyConfigChange(key, value);
+    if (!result.applied) {
+      logError(`[setConfig] rejected: ${result.reason}`);
+      return;
+    }
+    logError(`[setConfig] applied: ${key}=${value}`);
+
+    if (cachedData) {
+      cachedData = {
+        ...cachedData,
+        meta: {
+          ...cachedData.meta,
+          tokenSource: result.config.tokenSource,
+          ...(key === 'plan' ? { plan: value } : {}),
+          ...(key === 'autoCheckUpdates' ? { autoCheckUpdates: value } : {}),
+        },
+      };
+      broadcast(cachedData);
+    }
+
+    if (key === 'autoCheckUpdates') {
+      if (value === false) {
+        updateLifecycle.cancel();
+        logError('[update] auto-check disabled; scheduler cancelled');
+      } else if (!updateLifecycle.isScheduled()) {
+        logError('[update] auto-check enabled; scheduler restarted');
+        updateLifecycle.schedule(UPDATE_CHECK_INITIAL_DELAY_MS);
+      }
+    }
+  } catch (err) {
+    logError(`[setConfig] write failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -509,17 +327,10 @@ function createServer() {
       },
       websocket: {
         open(ws) {
-          connectedClients.add(ws);
-          if (cachedData) ws.send(JSON.stringify(cachedData));
-          // Send current update state to reconnecting clients
-          if (updateState.latestVersion && updateState.lastNotifiedVersion === updateState.latestVersion) {
-            ws.send(JSON.stringify({
-              type: 'updateAvailable',
-              currentVersion: PACKAGE_VERSION,
-              latestVersion: updateState.latestVersion,
-              changelogUrl: changelogUrlFor(updateState.latestVersion),
-            }));
-          }
+          addClient(ws);
+          if (cachedData) sendToClient(ws, cachedData);
+          const updatePayload = updateLifecycle.buildAvailablePayload();
+          if (updatePayload) sendToClient(ws, updatePayload);
         },
         async message(_ws, msg) {
           let cmd;
@@ -535,64 +346,21 @@ function createServer() {
           }
 
           if (cmd?.type === 'doUpdate') {
-            void doUpdateInstall();
+            void updateLifecycle.doInstall();
             return;
           }
 
           if (cmd?.type === 'checkUpdate') {
-            void doUpdateCheck({ manual: true });
+            void updateLifecycle.doCheck({ manual: true });
             return;
           }
 
           if (cmd?.type === 'setConfig') {
-            const VALID_KEYS = ['plan', 'tokenSource', 'autoCheckUpdates'];
-            const VALID_VALUES = {
-              plan: ['max', 'pro', 'team', 'enterprise', 'unknown'],
-              tokenSource: ['claude-code', 'opencode'],
-              autoCheckUpdates: [true, false],
-            };
-            const { key, value } = cmd;
-            if (!VALID_KEYS.includes(key)) {
-              logError(`[setConfig] rejected: invalid key=${key}`);
-              return;
-            }
-            if (!VALID_VALUES[key].includes(value)) {
-              logError(`[setConfig] rejected: invalid value=${value} for key=${key}`);
-              return;
-            }
-            try {
-              const config = await readConfig();
-              config[key] = value;
-              await atomicWriteJSON(CONFIG_FILE, config, { indent: 2 });
-              logError(`[setConfig] applied: ${key}=${value}`);
-              if (cachedData) {
-                cachedData = {
-                  ...cachedData,
-                  meta: {
-                    ...cachedData.meta,
-                    tokenSource: config.tokenSource,
-                    ...(key === 'plan' ? { plan: value } : {}),
-                    ...(key === 'autoCheckUpdates' ? { autoCheckUpdates: value } : {}),
-                  },
-                };
-                broadcastToAll(cachedData);
-              }
-              if (key === 'autoCheckUpdates') {
-                if (value === false) {
-                  cancelScheduledUpdateCheck();
-                  logError('[update] auto-check disabled; scheduler cancelled');
-                } else if (!updateCheckTimer) {
-                  logError('[update] auto-check enabled; scheduler restarted');
-                  scheduleNextUpdateCheck(UPDATE_CHECK_INITIAL_DELAY_MS);
-                }
-              }
-            } catch (err) {
-              logError(`[setConfig] write failed: ${err instanceof Error ? err.message : String(err)}`);
-            }
+            await handleSetConfig(cmd);
           }
         },
         close(ws) {
-          connectedClients.delete(ws);
+          removeClient(ws);
         },
       },
     });
@@ -609,7 +377,7 @@ function createServer() {
 function setupShutdown() {
   const shutdown = () => {
     try {
-      cancelScheduledUpdateCheck();
+      updateLifecycle.cancel();
       server?.stop();
     } finally {
       process.exit(0);
@@ -621,38 +389,24 @@ function setupShutdown() {
 }
 
 async function main() {
-  await fsPromises.mkdir(STATE_DIR, { recursive: true });
+  const { mkdir } = await import('node:fs/promises');
+  await mkdir(STATE_DIR, { recursive: true });
   const config = await readConfig();
   console.error(`token source: ${config.tokenSource}`);
   await detectClaudeVersion();
   const startupCreds = await readCredentials();
   await loadCachedDataFromDisk(startupCreds?.subscriptionType);
   await fetchAndHandleBroadcast();
-  await ensurePortAvailable();
+  ensurePortAvailable();
   server = createServer();
   setupShutdown();
   console.error(`ai-gauge-server listening on ws://localhost:${WS_PORT}`);
 
-  // Check for stale AIGAUGE_UPDATING env (previous update may have failed)
   if (process.env.AIGAUGE_UPDATING === '1') {
-    process.stderr.write('[update] daemon restarted with AIGAUGE_UPDATING flag — possible failed previous update; resetting state\n');
+    logError('[update] daemon restarted with AIGAUGE_UPDATING flag — possible failed previous update; resetting state');
   }
 
-  try {
-    const cacheFile = getCacheFilePath();
-    const cached = readCache(cacheFile);
-    if (cached?.latestVersion && cached.currentVersion === PACKAGE_VERSION) {
-      updateState.latestVersion = cached.latestVersion;
-      updateState.lastNotifiedVersion = cached.latestVersion;
-      updateState.lastCheckedAt = cached.lastCheckedAt;
-    }
-  } catch (err) {
-    logError(`[update] failed to read cache: ${err?.message || err}`);
-  }
-
-  // Schedule first update check with initial delay
-  process.stderr.write(`[update] update check scheduled in ${UPDATE_CHECK_INITIAL_DELAY_MS}ms\n`);
-  scheduleNextUpdateCheck(UPDATE_CHECK_INITIAL_DELAY_MS);
+  await updateLifecycle.start();
 
   await pollLoop();
 }
