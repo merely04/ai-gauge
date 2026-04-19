@@ -1,6 +1,15 @@
 #!/usr/bin/env bun
 
 import { systemNotify } from '../lib/notify.js';
+import {
+  checkForUpdate,
+  shouldSkipUpdateCheck,
+  getCacheFilePath,
+  readCache,
+  writeCache,
+} from '../lib/check-update.js';
+import { runUpdate } from '../lib/do-update.js';
+import { detectInstallSource } from '../lib/install-source.js';
 import { readFileSync, renameSync } from 'node:fs';
 import { promises as fsPromises } from 'node:fs';
 import { join } from 'node:path';
@@ -18,6 +27,12 @@ const API_URL = 'https://api.anthropic.com/api/oauth/usage';
 const PROTOCOL_VERSION = 1;
 const PACKAGE_VERSION = JSON.parse(readFileSync(join(import.meta.dir, '..', 'package.json'), 'utf8')).version;
 
+const UPDATE_CHECK_INTERVAL_MS = Number(Bun.env.AIGAUGE_UPDATE_CHECK_INTERVAL_MS) || (24 * 60 * 60 * 1000);
+const UPDATE_CHECK_INITIAL_DELAY_MS = Number(Bun.env.AIGAUGE_UPDATE_CHECK_INITIAL_DELAY_MS) || (30 * 1000);
+const UPDATE_SPAWN_TIMEOUT_MS = Number(Bun.env.AIGAUGE_UPDATE_SPAWN_TIMEOUT_MS) || (120 * 1000);
+const UPDATE_FETCH_TIMEOUT_MS = Number(Bun.env.AIGAUGE_UPDATE_FETCH_TIMEOUT_MS) || (10 * 1000);
+const REGISTRY_URL = Bun.env.AIGAUGE_REGISTRY_URL || 'https://registry.npmjs.org';
+
 let claudeVersion = '2.1.100';
 let cachedData = null;
 let currentInterval = POLL_INTERVAL;
@@ -26,6 +41,16 @@ let alerted95 = false;
 let server;
 let fetchInFlight = null;
 const connectedClients = new Set();
+
+let updateState = {
+  checking: false,
+  installing: false,
+  lastCheckedAt: null,
+  latestVersion: null,
+  lastNotifiedVersion: null,
+  error: null,
+};
+let updateCheckTimer = null;
 
 function logError(message) {
   console.error(message);
@@ -306,6 +331,136 @@ async function refreshNow() {
   }
 }
 
+async function writeUpdateStateFile(clear = false) {
+  try {
+    const stateFile = `${STATE_DIR}/update-state.json`;
+    const state = clear
+      ? { available: false, version: null, installing: false, error: null, changelogUrl: null, lastUpdatedAt: Date.now() }
+      : {
+          available: !!updateState.latestVersion,
+          version: updateState.latestVersion,
+          installing: updateState.installing,
+          error: updateState.error || null,
+          changelogUrl: updateState.latestVersion
+            ? `https://github.com/mere1y/ai-gauge/releases/tag/v${updateState.latestVersion}`
+            : null,
+          lastUpdatedAt: Date.now(),
+        };
+    const tmp = stateFile + '.tmp';
+    await Bun.write(tmp, JSON.stringify(state));
+    renameSync(tmp, stateFile);
+  } catch {}
+}
+
+async function doUpdateCheck({ manual = false } = {}) {
+  if (updateState.checking && !manual) return;
+  const config = await readConfig();
+  const { skip, reason } = shouldSkipUpdateCheck(process.env, config);
+
+  if (skip && !manual) {
+    process.stderr.write(`[update] scheduled update check skipped: ${reason}\n`);
+    return;
+  }
+  if (skip && manual) {
+    process.stderr.write(`[update] manual update check skipped: ${reason}\n`);
+    broadcastToAll({ type: 'updateCheckFailed', reason });
+    return;
+  }
+
+  updateState.checking = true;
+  try {
+    const result = await checkForUpdate({
+      currentVersion: PACKAGE_VERSION,
+      registryUrl: REGISTRY_URL,
+      packageName: 'ai-gauge',
+      timeoutMs: UPDATE_FETCH_TIMEOUT_MS,
+    });
+
+    if (result.error) {
+      process.stderr.write(`[update] check failed: ${result.error}\n`);
+      broadcastToAll({ type: 'updateCheckFailed', reason: result.error });
+      return;
+    }
+
+    updateState.lastCheckedAt = Date.now();
+    updateState.latestVersion = result.latestVersion;
+
+    try {
+      writeCache(getCacheFilePath(), {
+        lastCheckedAt: updateState.lastCheckedAt,
+        latestVersion: result.latestVersion,
+        currentVersion: PACKAGE_VERSION,
+      });
+    } catch {}
+
+    if (result.updateAvailable && updateState.lastNotifiedVersion !== result.latestVersion) {
+      const payload = {
+        type: 'updateAvailable',
+        currentVersion: PACKAGE_VERSION,
+        latestVersion: result.latestVersion,
+        changelogUrl: `https://github.com/mere1y/ai-gauge/releases/tag/v${result.latestVersion}`,
+      };
+      broadcastToAll(payload);
+      updateState.lastNotifiedVersion = result.latestVersion;
+      await writeUpdateStateFile();
+      if (process.platform === 'linux') {
+        await systemNotify({
+          title: 'AI Gauge Update',
+          message: `v${result.latestVersion} available`,
+          urgency: 'normal',
+        });
+      }
+    }
+  } finally {
+    updateState.checking = false;
+  }
+}
+
+async function doUpdateInstall() {
+  if (updateState.installing) {
+    broadcastToAll({ type: 'updateAlreadyInProgress' });
+    return;
+  }
+
+  updateState.installing = true;
+  updateState.error = null;
+  broadcastToAll({ type: 'updateInstalling', latestVersion: updateState.latestVersion });
+  await writeUpdateStateFile();
+
+  const installSource = detectInstallSource(import.meta.dir);
+
+  const result = await runUpdate({
+    installSource,
+    packageName: 'ai-gauge',
+    timeoutMs: UPDATE_SPAWN_TIMEOUT_MS,
+    env: process.env,
+  });
+
+  if (result.success) {
+    broadcastToAll({ type: 'updateComplete', reason: 'completed' });
+    await writeUpdateStateFile(true);
+    setTimeout(() => process.exit(0), 500);
+  } else {
+    updateState.installing = false;
+    updateState.error = result.reason;
+    broadcastToAll({
+      type: 'updateFailed',
+      reason: result.reason,
+      command: result.command,
+      clipboardCopied: result.clipboardCopied,
+    });
+    await writeUpdateStateFile();
+  }
+}
+
+function scheduleNextUpdateCheck(delayMs) {
+  if (updateCheckTimer) clearTimeout(updateCheckTimer);
+  updateCheckTimer = setTimeout(async () => {
+    await doUpdateCheck({ manual: false });
+    scheduleNextUpdateCheck(UPDATE_CHECK_INTERVAL_MS);
+  }, delayMs);
+}
+
 async function pollLoop() {
   while (true) {
     await Bun.sleep(currentInterval);
@@ -361,6 +516,15 @@ function createServer() {
         open(ws) {
           connectedClients.add(ws);
           if (cachedData) ws.send(JSON.stringify(cachedData));
+          // Send current update state to reconnecting clients
+          if (updateState.latestVersion && updateState.lastNotifiedVersion === updateState.latestVersion) {
+            ws.send(JSON.stringify({
+              type: 'updateAvailable',
+              currentVersion: PACKAGE_VERSION,
+              latestVersion: updateState.latestVersion,
+              changelogUrl: `https://github.com/mere1y/ai-gauge/releases/tag/v${updateState.latestVersion}`,
+            }));
+          }
         },
         async message(_ws, msg) {
           let cmd;
@@ -375,11 +539,22 @@ function createServer() {
             return;
           }
 
+          if (cmd?.type === 'doUpdate') {
+            void doUpdateInstall();
+            return;
+          }
+
+          if (cmd?.type === 'checkUpdate') {
+            void doUpdateCheck({ manual: true });
+            return;
+          }
+
           if (cmd?.type === 'setConfig') {
-            const VALID_KEYS = ['plan', 'tokenSource'];
+            const VALID_KEYS = ['plan', 'tokenSource', 'autoCheckUpdates'];
             const VALID_VALUES = {
               plan: ['max', 'pro', 'team', 'enterprise', 'unknown'],
               tokenSource: ['claude-code', 'opencode'],
+              autoCheckUpdates: [true, false],
             };
             const { key, value } = cmd;
             if (!VALID_KEYS.includes(key)) {
@@ -405,6 +580,7 @@ function createServer() {
                     ...cachedData.meta,
                     tokenSource: config.tokenSource,
                     ...(key === 'plan' ? { plan: value } : {}),
+                    ...(key === 'autoCheckUpdates' ? { autoCheckUpdates: value } : {}),
                   },
                 };
                 broadcastToAll(cachedData);
@@ -454,6 +630,27 @@ async function main() {
   server = createServer();
   setupShutdown();
   console.error(`ai-gauge-server listening on ws://localhost:${WS_PORT}`);
+
+  // Check for stale AIGAUGE_UPDATING env (previous update may have failed)
+  if (process.env.AIGAUGE_UPDATING === '1') {
+    process.stderr.write('[update] daemon restarted with AIGAUGE_UPDATING flag — possible failed previous update; resetting state\n');
+  }
+
+  // Try to rehydrate update state from cache
+  try {
+    const cacheFile = getCacheFilePath();
+    const cached = readCache(cacheFile);
+    if (cached?.latestVersion && cached.currentVersion === PACKAGE_VERSION) {
+      // Same version as when cached — may have already been notified; restore latestVersion
+      updateState.latestVersion = cached.latestVersion;
+      updateState.lastCheckedAt = cached.lastCheckedAt;
+    }
+  } catch {}
+
+  // Schedule first update check with initial delay
+  process.stderr.write(`[update] update check scheduled in ${UPDATE_CHECK_INITIAL_DELAY_MS}ms\n`);
+  scheduleNextUpdateCheck(UPDATE_CHECK_INITIAL_DELAY_MS);
+
   await pollLoop();
 }
 
