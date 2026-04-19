@@ -22,6 +22,18 @@ final class UsageModel: ObservableObject {
     @Published var plan: String = ""
     @Published var tokenSource: String = ""
 
+    @Published var updateAvailable: Bool = false
+    @Published var latestVersion: String? = nil
+    @Published var updateInProgress: Bool = false
+    @Published var updateError: String? = nil
+    @Published var updateSuccess: String? = nil
+    @Published var changelogUrl: String? = nil
+    @Published var daemonVersion: String? = nil
+    @Published var protocolVersion: Int? = nil
+    @Published var autoCheckUpdatesEnabled: Bool = true
+
+    var _previousDaemonVersion: String? = nil
+
     /// Replicates `render()` from `bin/ai-gauge-waybar` — transforms the raw
     /// Anthropic API broadcast into display-ready text/tooltip/urgency.
     func update(from payload: UsagePayload) {
@@ -70,7 +82,67 @@ final class UsageModel: ObservableObject {
         self.plan = payload.meta?.plan ?? ""
         self.tokenSource = payload.meta?.tokenSource ?? ""
 
+        if let newVersion = payload.meta?.version {
+            daemonVersion = newVersion
+            protocolVersion = payload.meta?.protocolVersion
+            autoCheckUpdatesEnabled = payload.meta?.autoCheckUpdates ?? true
+
+            if let prev = _previousDaemonVersion, compareVersions(newVersion, prev) > 0 {
+                updateSuccess = "Updated to v\(newVersion)"
+                updateAvailable = false
+                latestVersion = nil
+                updateInProgress = false
+                scheduleUpdateSuccessClear()
+            }
+            _previousDaemonVersion = newVersion
+        }
+
         self.tooltip = tooltipStr
+    }
+
+    func handleUpdateAvailable(_ p: UpdateAvailablePayload) {
+        updateAvailable = true
+        latestVersion = p.latestVersion
+        changelogUrl = p.changelogUrl
+        updateError = nil
+    }
+
+    func handleUpdateInstalling(_ p: UpdateInstallingPayload) {
+        updateInProgress = true
+        updateError = nil
+    }
+
+    func handleUpdateFailed(_ p: UpdateFailedPayload) {
+        updateInProgress = false
+        updateError = p.reason
+    }
+
+    func handleUpdateComplete(_ p: UpdateCompletePayload) {
+        updateInProgress = false
+        updateAvailable = false
+        latestVersion = nil
+        updateError = nil
+    }
+
+    func scheduleUpdateSuccessClear(after seconds: Double = 10) {
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            await MainActor.run {
+                self?.updateSuccess = nil
+            }
+        }
+    }
+
+    func compareVersions(_ a: String, _ b: String) -> Int {
+        let aParts = a.split(separator: ".").compactMap { Int($0) }
+        let bParts = b.split(separator: ".").compactMap { Int($0) }
+        let len = max(aParts.count, bParts.count)
+        for i in 0..<len {
+            let av = i < aParts.count ? aParts[i] : 0
+            let bv = i < bParts.count ? bParts[i] : 0
+            if av != bv { return av - bv }
+        }
+        return 0
     }
 
     // MARK: - Date helpers (port of waybar's formatDuration / formatDurationLong)

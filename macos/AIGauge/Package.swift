@@ -18,6 +18,11 @@ let package = Package(
                 .copy("Info.plist"),
                 .copy("Credits.rtf")
             ]
+        ),
+        .testTarget(
+            name: "AIGaugeTests",
+            dependencies: ["AIGauge"],
+            path: "Tests/AIGaugeTests"
         )
     ]
 )

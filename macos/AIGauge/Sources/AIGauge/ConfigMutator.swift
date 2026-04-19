@@ -16,6 +16,12 @@ final class ConfigMutator: ObservableObject {
         webSocketClient?.send("{\"type\":\"setConfig\",\"key\":\"tokenSource\",\"value\":\"\(Self.escape(source))\"}")
     }
 
+    func setAutoCheckUpdates(_ enabled: Bool) {
+        // Server validates against `[true, false]` (boolean), so emit an
+        // unquoted JSON literal rather than a string.
+        webSocketClient?.send("{\"type\":\"setConfig\",\"key\":\"autoCheckUpdates\",\"value\":\(enabled ? "true" : "false")}")
+    }
+
     func refresh() {
         webSocketClient?.send("{\"type\":\"refresh\"}")
     }

@@ -20,6 +20,9 @@ struct UsagePayload: Codable {
         let plan: String?
         let fetchedAt: String?
         let tokenSource: String?
+        let version: String?
+        let protocolVersion: Int?
+        let autoCheckUpdates: Bool?
     }
 
     let five_hour: Window?
@@ -42,6 +45,12 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
 
     var onNotify: ((NotifyPayload) -> Void)?
     var onUsageUpdate: ((UsagePayload) -> Void)?
+    var onUpdateAvailable: ((UpdateAvailablePayload) -> Void)?
+    var onUpdateInstalling: ((UpdateInstallingPayload) -> Void)?
+    var onUpdateFailed: ((UpdateFailedPayload) -> Void)?
+    var onUpdateComplete: ((UpdateCompletePayload) -> Void)?
+    var onUpdateCheckFailed: ((UpdateCheckFailedPayload) -> Void)?
+    var onUpdateAlreadyInProgress: (() -> Void)?
 
     private let session: URLSession
     private let decoder = JSONDecoder()
@@ -120,6 +129,45 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
     private func handleMessage(_ text: String) {
         guard let data = text.data(using: .utf8) else { return }
 
+        // Peek at `type` to route update messages to their decoders before
+        // falling through to notify / usage decoding.
+        if let peek = try? decoder.decode(TypedMessage.self, from: data) {
+            switch peek.type {
+            case "updateAvailable":
+                if let payload = try? decoder.decode(UpdateAvailablePayload.self, from: data) {
+                    DispatchQueue.main.async { self.onUpdateAvailable?(payload) }
+                    return
+                }
+            case "updateInstalling":
+                if let payload = try? decoder.decode(UpdateInstallingPayload.self, from: data) {
+                    DispatchQueue.main.async { self.onUpdateInstalling?(payload) }
+                    return
+                }
+            case "updateFailed":
+                if let payload = try? decoder.decode(UpdateFailedPayload.self, from: data) {
+                    DispatchQueue.main.async { self.onUpdateFailed?(payload) }
+                    return
+                }
+            case "updateComplete":
+                if let payload = try? decoder.decode(UpdateCompletePayload.self, from: data) {
+                    DispatchQueue.main.async { self.onUpdateComplete?(payload) }
+                    return
+                }
+            case "updateCheckFailed":
+                if let payload = try? decoder.decode(UpdateCheckFailedPayload.self, from: data) {
+                    DispatchQueue.main.async { self.onUpdateCheckFailed?(payload) }
+                    return
+                }
+            case "updateAlreadyInProgress":
+                DispatchQueue.main.async { self.onUpdateAlreadyInProgress?() }
+                return
+            case "notify":
+                break
+            default:
+                break
+            }
+        }
+
         // Notify payload has a "type" field — try it first so raw usage data
         // (which never has `type`) doesn't accidentally match.
         if let notify = try? decoder.decode(NotifyPayload.self, from: data), notify.type == "notify" {
@@ -135,6 +183,14 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
                 self.onUsageUpdate?(usage)
             }
         }
+    }
+
+    func sendCheckUpdate() {
+        send("{\"type\":\"checkUpdate\"}")
+    }
+
+    func sendDoUpdate() {
+        send("{\"type\":\"doUpdate\"}")
     }
 
     private func reconnectWithBackoff() {

@@ -5,6 +5,7 @@ import Foundation
 struct MenuBarView: View {
     @EnvironmentObject var usageModel: UsageModel
     @EnvironmentObject var configMutator: ConfigMutator
+    @EnvironmentObject var webSocketClient: WebSocketClient
 
     private let plans: [String] = ["max", "pro", "team", "enterprise", "unknown"]
     private let sources: [(value: String, display: String)] = [
@@ -13,13 +14,41 @@ struct MenuBarView: View {
     ]
 
     var body: some View {
+        tooltipSection
+
+        Divider()
+
+        primaryActions
+
+        Divider()
+
+        Button(action: { configMutator.refresh() }) {
+            Label("Refresh now", systemImage: "arrow.clockwise")
+                .labelStyle(.titleAndIcon)
+        }
+
+        updateSection
+
+        systemActions
+
+        Divider()
+
+        Button(action: { NSApp.terminate(nil) }) {
+            Label("Quit AI Gauge", systemImage: "power")
+                .labelStyle(.titleAndIcon)
+        }
+    }
+
+    @ViewBuilder
+    private var tooltipSection: some View {
         ForEach(Array(tooltipLines.enumerated()), id: \.offset) { _, line in
             Text(line)
                 .foregroundColor(urgencyColor)
         }
+    }
 
-        Divider()
-
+    @ViewBuilder
+    private var primaryActions: some View {
         Button(action: { Actions.copyUsage(usageModel) }) {
             Label("Copy usage summary", systemImage: "doc.on.doc")
                 .labelStyle(.titleAndIcon)
@@ -42,14 +71,71 @@ struct MenuBarView: View {
             Label("Change token source", systemImage: "key.fill")
                 .labelStyle(.titleAndIcon)
         }
+    }
 
-        Divider()
+    @ViewBuilder
+    private var updateSection: some View {
+        updateStatusItems
 
-        Button(action: { configMutator.refresh() }) {
-            Label("Refresh now", systemImage: "arrow.clockwise")
+        if usageModel.updateAvailable || usageModel.updateError != nil || usageModel.updateSuccess != nil {
+            Divider()
+        }
+
+        Button(action: { webSocketClient.sendCheckUpdate() }) {
+            Label("Check for updates now", systemImage: "arrow.clockwise")
                 .labelStyle(.titleAndIcon)
         }
 
+        if let url = usageModel.changelogUrl, let urlObj = URL(string: url) {
+            Button(action: { NSWorkspace.shared.open(urlObj) }) {
+                Label("View changelog", systemImage: "doc.text")
+                    .labelStyle(.titleAndIcon)
+            }
+        }
+
+        Divider()
+
+        Toggle("Auto-check for updates", isOn: Binding(
+            get: { usageModel.autoCheckUpdatesEnabled },
+            set: { newValue in
+                configMutator.setAutoCheckUpdates(newValue)
+            }
+        ))
+
+        Divider()
+    }
+
+    @ViewBuilder
+    private var updateStatusItems: some View {
+        if usageModel.updateInProgress {
+            Label("Updating...", systemImage: "arrow.clockwise")
+                .labelStyle(.titleAndIcon)
+        } else if let version = usageModel.latestVersion, usageModel.updateAvailable {
+            Button(action: { webSocketClient.sendDoUpdate() }) {
+                Label("Update to v\(version)", systemImage: "arrow.down.circle")
+                    .labelStyle(.titleAndIcon)
+            }
+        }
+
+        if let errorText = usageModel.updateError {
+            Label("Update failed: \(errorText)", systemImage: "exclamationmark.triangle")
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(.red)
+            Button(action: { webSocketClient.sendDoUpdate() }) {
+                Label("Try again", systemImage: "arrow.clockwise")
+                    .labelStyle(.titleAndIcon)
+            }
+        }
+
+        if let successText = usageModel.updateSuccess {
+            Label(successText, systemImage: "checkmark.circle")
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(.green)
+        }
+    }
+
+    @ViewBuilder
+    private var systemActions: some View {
         Button(action: { Actions.restartServer() }) {
             Label("Restart server", systemImage: "arrow.triangle.2.circlepath")
                 .labelStyle(.titleAndIcon)
@@ -62,13 +148,6 @@ struct MenuBarView: View {
 
         Button(action: { Actions.showAbout() }) {
             Label("About AI Gauge", systemImage: "info.circle")
-                .labelStyle(.titleAndIcon)
-        }
-
-        Divider()
-
-        Button(action: { NSApp.terminate(nil) }) {
-            Label("Quit AI Gauge", systemImage: "power")
                 .labelStyle(.titleAndIcon)
         }
     }

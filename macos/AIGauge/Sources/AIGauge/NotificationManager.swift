@@ -49,4 +49,57 @@ final class NotificationManager: ObservableObject {
             }
         }
     }
+
+    // MARK: - Update notifications
+
+    func showUpdateAvailable(version: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "AI Gauge Update"
+        content.body = "v\(version) is available"
+        content.categoryIdentifier = "ai-gauge.update.available"
+
+        let request = UNNotificationRequest(
+            identifier: "ai-gauge.update.available.\(version)",
+            content: content,
+            trigger: nil
+        )
+
+        center.add(request) { _ in
+            FileHandle.standardError.write(Data("[notify] scheduled update-available v\(version)\n".utf8))
+        }
+    }
+
+    func showUpdateFailed(reason: String, command: String?) {
+        let content = UNMutableNotificationContent()
+        content.title = "AI Gauge Update Failed"
+        content.body = reason + (command.map { "\nRun: \($0)" } ?? "")
+        content.categoryIdentifier = "ai-gauge.update.failed"
+
+        let request = UNNotificationRequest(
+            identifier: "ai-gauge.update.failed",
+            content: content,
+            trigger: nil
+        )
+
+        center.add(request) { _ in
+            FileHandle.standardError.write(Data("[notify] scheduled update-failed reason=\(reason)\n".utf8))
+        }
+    }
+
+    func showUpdateComplete(version: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "AI Gauge Updated"
+        content.body = "Updated to v\(version)"
+        content.categoryIdentifier = "ai-gauge.update.complete"
+
+        let request = UNNotificationRequest(
+            identifier: "ai-gauge.update.complete.\(version)",
+            content: content,
+            trigger: nil
+        )
+
+        center.add(request) { _ in
+            FileHandle.standardError.write(Data("[notify] scheduled update-complete v\(version)\n".utf8))
+        }
+    }
 }

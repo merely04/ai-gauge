@@ -27,14 +27,76 @@ struct AIGaugeApp: App {
                 )
             }
         }
+        ws.onUpdateAvailable = { [weak usage, weak notif] payload in
+            Task { @MainActor in
+                usage?.handleUpdateAvailable(payload)
+                notif?.showUpdateAvailable(version: payload.latestVersion)
+            }
+        }
+        ws.onUpdateInstalling = { [weak usage] payload in
+            Task { @MainActor in
+                usage?.handleUpdateInstalling(payload)
+            }
+        }
+        ws.onUpdateFailed = { [weak usage, weak notif] payload in
+            Task { @MainActor in
+                usage?.handleUpdateFailed(payload)
+                notif?.showUpdateFailed(reason: payload.reason, command: payload.command)
+            }
+        }
+        ws.onUpdateComplete = { [weak usage, weak notif] payload in
+            Task { @MainActor in
+                usage?.handleUpdateComplete(payload)
+                let version = payload.installedVersion ?? "unknown"
+                notif?.showUpdateComplete(version: version)
+            }
+        }
+        ws.onUpdateCheckFailed = { _ in }
+        ws.onUpdateAlreadyInProgress = { }
 
         _wsClient = StateObject(wrappedValue: ws)
         _usageModel = StateObject(wrappedValue: usage)
         _notificationManager = StateObject(wrappedValue: notif)
         _configMutator = StateObject(wrappedValue: config)
 
+        Self.applyTestEnvHooks(usage: usage)
+
         ws.connect()
         notif.requestAuthorization()
+    }
+
+    private static func applyTestEnvHooks(usage: UsageModel) {
+        let env = ProcessInfo.processInfo.environment
+        guard env["AIGAUGE_TEST_UPDATE_AVAILABLE"] == "1"
+                || env["AIGAUGE_TEST_UPDATE_INSTALLING"] == "1"
+                || (env["AIGAUGE_TEST_UPDATE_FAILED"].map { !$0.isEmpty } ?? false) else {
+            return
+        }
+
+        Task { @MainActor in
+            if env["AIGAUGE_TEST_UPDATE_AVAILABLE"] == "1" {
+                let testVersion = env["AIGAUGE_TEST_LATEST_VERSION"] ?? "9.9.9"
+                let payload = UpdateAvailablePayload(
+                    type: "updateAvailable",
+                    currentVersion: nil,
+                    latestVersion: testVersion,
+                    changelogUrl: "https://github.com/mere1y/ai-gauge/releases/tag/v\(testVersion)"
+                )
+                usage.handleUpdateAvailable(payload)
+            }
+            if env["AIGAUGE_TEST_UPDATE_INSTALLING"] == "1" {
+                usage.updateInProgress = true
+            }
+            if let reason = env["AIGAUGE_TEST_UPDATE_FAILED"], !reason.isEmpty {
+                let payload = UpdateFailedPayload(
+                    type: "updateFailed",
+                    reason: reason,
+                    command: nil,
+                    clipboardCopied: nil
+                )
+                usage.handleUpdateFailed(payload)
+            }
+        }
     }
 
     var body: some Scene {
@@ -42,9 +104,17 @@ struct AIGaugeApp: App {
             MenuBarView()
                 .environmentObject(usageModel)
                 .environmentObject(configMutator)
+                .environmentObject(wsClient)
         } label: {
-            Text(usageModel.text.isEmpty ? "--" : usageModel.text)
-                .foregroundColor(urgencyColor(usageModel.urgency))
+            HStack(spacing: 4) {
+                Text(usageModel.text.isEmpty ? "--" : usageModel.text)
+                    .foregroundColor(urgencyColor(usageModel.urgency))
+                if usageModel.updateAvailable {
+                    Image(systemName: "circle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.system(size: 6))
+                }
+            }
         }
         .menuBarExtraStyle(.menu)
     }
