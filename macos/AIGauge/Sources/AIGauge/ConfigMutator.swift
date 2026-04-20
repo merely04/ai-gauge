@@ -16,6 +16,10 @@ final class ConfigMutator: ObservableObject {
         webSocketClient?.send("{\"type\":\"setConfig\",\"key\":\"tokenSource\",\"value\":\"\(Self.escape(source))\"}")
     }
 
+    func setDisplayMode(_ mode: String) {
+        webSocketClient?.send("{\"type\":\"setConfig\",\"key\":\"displayMode\",\"value\":\"\(Self.escape(mode))\"}")
+    }
+
     func setAutoCheckUpdates(_ enabled: Bool) {
         // Server validates against `[true, false]` (boolean), so emit an
         // unquoted JSON literal rather than a string.

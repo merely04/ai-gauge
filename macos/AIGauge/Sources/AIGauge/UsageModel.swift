@@ -21,6 +21,7 @@ final class UsageModel: ObservableObject {
     @Published var urgency: Urgency = .ok
     @Published var plan: String = ""
     @Published var tokenSource: String = ""
+    @Published var displayMode: String = "full"
 
     @Published var updateAvailable: Bool = false
     @Published var latestVersion: String? = nil
@@ -34,9 +35,20 @@ final class UsageModel: ObservableObject {
 
     var _previousDaemonVersion: String? = nil
 
+    private static let dotFilled = "\u{25CF}"
+    private static let dotEmpty = "\u{25CB}"
+    private static let barFilled = "\u{2593}"
+    private static let barEmpty = "\u{2591}"
+    private static let timer = "\u{23F1}"
+    private static let spark = "\u{2726}"
+
+    private static func barCells(_ pct: Double) -> Int {
+        max(0, min(10, Int(pct / 10.0)))
+    }
+
     /// Replicates `render()` from `bin/ai-gauge-waybar` — transforms the raw
     /// Anthropic API broadcast into display-ready text/tooltip/urgency.
-    func update(from payload: UsagePayload) {
+    func update(from payload: UsagePayload, now: Date = Date()) {
         let fivePct = payload.five_hour?.utilization ?? 0
         let sevenPct = payload.seven_day?.utilization ?? 0
         let fiveInt = Int(fivePct.rounded())
@@ -45,28 +57,46 @@ final class UsageModel: ObservableObject {
         self.percentage = fiveInt
         self.urgency = Urgency.from(percentage: fiveInt)
 
-        var textStr = "✦ \(fiveInt)%"
-        if let fiveRemaining = Self.formatDuration(payload.five_hour?.resets_at), !fiveRemaining.isEmpty {
-            textStr += " \(fiveRemaining)"
+        let mode = payload.meta?.displayMode ?? "full"
+        switch mode {
+        case "percent-only":
+            self.text = "\(Self.spark) \(fiveInt)%"
+        case "bar-dots":
+            let n = Self.barCells(fivePct)
+            self.text = "\(Self.spark) \(String(repeating: Self.dotFilled, count: n))\(String(repeating: Self.dotEmpty, count: 10 - n))"
+        case "number-bar":
+            let n = Self.barCells(fivePct)
+            self.text = "\(fiveInt)% \(String(repeating: Self.barFilled, count: n))\(String(repeating: Self.barEmpty, count: 10 - n))"
+        case "time-to-reset":
+            if let rem = Self.formatDuration(payload.five_hour?.resets_at, now: now), !rem.isEmpty {
+                self.text = "\(Self.timer) \(rem)"
+            } else {
+                self.text = "\(Self.timer) --"
+            }
+        default:
+            var textStr = "\(Self.spark) \(fiveInt)%"
+            if let fiveRemaining = Self.formatDuration(payload.five_hour?.resets_at, now: now), !fiveRemaining.isEmpty {
+                textStr += " \(fiveRemaining)"
+            }
+            textStr += " · \(sevenInt)%w"
+            self.text = textStr
         }
-        textStr += " · \(sevenInt)%w"
-        self.text = textStr
 
         var tooltipStr = "Claude Code Usage"
         tooltipStr += "\n───────────────"
         tooltipStr += "\n5-hour:  \(fiveInt)%"
-        if let fiveLong = Self.formatDurationLong(payload.five_hour?.resets_at), !fiveLong.isEmpty {
+        if let fiveLong = Self.formatDurationLong(payload.five_hour?.resets_at, now: now), !fiveLong.isEmpty {
             tooltipStr += "  (resets in \(fiveLong))"
         }
         tooltipStr += "\nWeekly:  \(sevenInt)%"
-        if let sevenLong = Self.formatDurationLong(payload.seven_day?.resets_at), !sevenLong.isEmpty {
+        if let sevenLong = Self.formatDurationLong(payload.seven_day?.resets_at, now: now), !sevenLong.isEmpty {
             tooltipStr += "  (resets in \(sevenLong))"
         }
 
         if let sonnetPct = payload.seven_day_sonnet?.utilization {
             let sonnetInt = Int(sonnetPct.rounded())
             tooltipStr += "\nSonnet:  \(sonnetInt)%"
-            if let sonnetLong = Self.formatDurationLong(payload.seven_day_sonnet?.resets_at), !sonnetLong.isEmpty {
+            if let sonnetLong = Self.formatDurationLong(payload.seven_day_sonnet?.resets_at, now: now), !sonnetLong.isEmpty {
                 tooltipStr += "  (resets in \(sonnetLong))"
             }
         }
@@ -81,6 +111,7 @@ final class UsageModel: ObservableObject {
 
         self.plan = payload.meta?.plan ?? ""
         self.tokenSource = payload.meta?.tokenSource ?? ""
+        self.displayMode = payload.meta?.displayMode ?? "full"
 
         if let newVersion = payload.meta?.version {
             daemonVersion = newVersion
@@ -98,6 +129,26 @@ final class UsageModel: ObservableObject {
         }
 
         self.tooltip = tooltipStr
+
+        if let logPath = ProcessInfo.processInfo.environment["AIGAUGE_TEXT_LOG_PATH"], !logPath.isEmpty {
+            let fmt = ISO8601DateFormatter()
+            fmt.formatOptions = [.withInternetDateTime]
+            let tsStr = fmt.string(from: Date())
+            let urgStr: String
+            switch self.urgency {
+            case .ok: urgStr = "ok"
+            case .warning: urgStr = "warning"
+            case .critical: urgStr = "critical"
+            }
+            let line = "{\"ts\":\"\(tsStr)\",\"text\":\(self.text.debugDescription),\"displayMode\":\"\(self.displayMode)\",\"urgency\":\"\(urgStr)\"}\n"
+            if let handle = FileHandle(forWritingAtPath: logPath) {
+                handle.seekToEndOfFile()
+                handle.write(line.data(using: .utf8) ?? Data())
+                handle.closeFile()
+            } else {
+                try? line.data(using: .utf8)?.write(to: URL(fileURLWithPath: logPath))
+            }
+        }
     }
 
     func handleUpdateAvailable(_ p: UpdateAvailablePayload) {
@@ -170,14 +221,14 @@ final class UsageModel: ObservableObject {
         return nil
     }
 
-    fileprivate static func remainingSeconds(_ resetsAt: String?) -> TimeInterval? {
+    fileprivate static func remainingSeconds(_ resetsAt: String?, now: Date = Date()) -> TimeInterval? {
         guard let resetsAt, !resetsAt.isEmpty, resetsAt != "null" else { return nil }
         guard let date = parseISODate(resetsAt) else { return nil }
-        return max(0, date.timeIntervalSinceNow)
+        return max(0, date.timeIntervalSince(now))
     }
 
-    fileprivate static func formatDuration(_ resetsAt: String?) -> String? {
-        guard let remaining = remainingSeconds(resetsAt) else { return nil }
+    fileprivate static func formatDuration(_ resetsAt: String?, now: Date = Date()) -> String? {
+        guard let remaining = remainingSeconds(resetsAt, now: now) else { return nil }
         if remaining <= 0 { return "now" }
 
         let hours = Int(remaining / 3600)
@@ -189,8 +240,8 @@ final class UsageModel: ObservableObject {
         return "\(mins)m"
     }
 
-    fileprivate static func formatDurationLong(_ resetsAt: String?) -> String? {
-        guard let remaining = remainingSeconds(resetsAt) else { return nil }
+    fileprivate static func formatDurationLong(_ resetsAt: String?, now: Date = Date()) -> String? {
+        guard let remaining = remainingSeconds(resetsAt, now: now) else { return nil }
         if remaining <= 0 { return "now" }
 
         let days = Int(remaining / 86400)

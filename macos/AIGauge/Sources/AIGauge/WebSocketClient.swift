@@ -23,6 +23,7 @@ struct UsagePayload: Codable {
         let version: String?
         let protocolVersion: Int?
         let autoCheckUpdates: Bool?
+        let displayMode: String?
     }
 
     let five_hour: Window?

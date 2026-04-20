@@ -12,6 +12,13 @@ struct MenuBarView: View {
         ("claude-code", "Claude Code"),
         ("opencode", "OpenCode")
     ]
+    private let displayModes: [(value: String, display: String)] = [
+        (value: "full", display: "Full"),
+        (value: "percent-only", display: "Percent only"),
+        (value: "bar-dots", display: "Bar (dots)"),
+        (value: "number-bar", display: "Number + bar"),
+        (value: "time-to-reset", display: "Time to reset"),
+    ]
 
     var body: some View {
         tooltipSection
@@ -69,6 +76,15 @@ struct MenuBarView: View {
             }
         } label: {
             Label("Change token source", systemImage: "key.fill")
+                .labelStyle(.titleAndIcon)
+        }
+
+        Menu {
+            ForEach(displayModes, id: \.value) { mode in
+                displayModeButton(value: mode.value, display: mode.display)
+            }
+        } label: {
+            Label("Display mode", systemImage: "rectangle.grid.1x2")
                 .labelStyle(.titleAndIcon)
         }
     }
@@ -188,6 +204,16 @@ struct MenuBarView: View {
                 if newValue {
                     configMutator.setTokenSource(value)
                 }
+            }
+        ))
+    }
+
+    @ViewBuilder
+    private func displayModeButton(value: String, display: String) -> some View {
+        Toggle(display, isOn: Binding(
+            get: { usageModel.displayMode == value },
+            set: { newValue in
+                if newValue { configMutator.setDisplayMode(value) }
             }
         ))
     }
