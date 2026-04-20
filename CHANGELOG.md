@@ -7,12 +7,17 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.2] — 2026-04-20
+
 ### Added
-- `displayMode` config key for compact menubar/waybar display variants: `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
-- Display mode submenu in macOS menubar (Display mode ▶)
-- Display mode submenu in Linux walker UI (`ai-gauge-config`) and right-click menu (`ai-gauge-menu`)
-- `lib/render-waybar.js` — extracted pure render function with test-clock injection
-- 25 fixture test cases + bun unit tests for all display variants
+- `displayMode` config key for compact menubar/waybar display variants: `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`.
+- Display mode submenu in macOS menubar (**Display mode ▶**), Linux walker UI (`ai-gauge-config`), and right-click menu (`ai-gauge-menu`).
+- `lib/render-waybar.js` — extracted pure render function with injectable clock for deterministic testing.
+- 25 fixture test cases + bun unit tests for all display variants (`test/render-waybar.test.js`, `test/config-schema.test.js`, `test/broadcast-displaymode.test.js`).
+
+### Fixed
+- **Phantom update notification** ("v1.2.1 is available" when already on v1.2.1): `buildAvailablePayload()` now drops payloads whose cached `latestVersion <= packageVersion`; `rehydrateFromCache()` only adopts cached versions that are strictly newer; `doCheck()` no-update branch now clears both `state.lastNotifiedVersion` **and** `state.latestVersion` (previously the latter could leak across restarts when `autoCheckUpdates=false`).
+- **About window overflow**: Credits.rtf margins reduced from `\margl1440\margr1440` (~1") to `\margl120\margr120` (~0.08") so the description text fits inside the narrow About panel's rounded frame.
 
 ## [1.2.1] — 2026-04-19
 
