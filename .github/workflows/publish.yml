@@ -6,7 +6,18 @@ on:
       - 'v*'
 
 jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate version consistency against tag
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: bash scripts/validate-release.sh --tag "$GITHUB_REF_NAME"
+
   build-macos-binary:
+    needs: validate-release
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
