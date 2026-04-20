@@ -17,7 +17,7 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 - **Phantom update notification** ("v1.2.1 is available" when already on v1.2.1): `buildAvailablePayload()` now drops payloads whose cached `latestVersion <= packageVersion`; `rehydrateFromCache()` only adopts cached versions that are strictly newer; `doCheck()` no-update branch now clears both `state.lastNotifiedVersion` **and** `state.latestVersion` (previously the latter could leak across restarts when `autoCheckUpdates=false`).
-- **About window overflow**: Credits.rtf margins reduced from `\margl1440\margr1440` (~1") to `\margl120\margr120` (~0.08") so the description text fits inside the narrow About panel's rounded frame.
+- **About window overflow**: Credits.rtf description shortened and split across 3 narrower lines (≤43 chars each) so the text fits inside the About panel's rounded frame on macOS. Margins were also relaxed, but the real fix was avoiding lines wider than the credits view.
 
 ## [1.2.1] — 2026-04-19
 
