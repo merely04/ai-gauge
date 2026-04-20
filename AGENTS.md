@@ -177,8 +177,10 @@ Broadcast when the daemon detects or performs updates.
 
 #### `updateAvailable`
 ```json
-{"type":"updateAvailable","currentVersion":"1.1.1","latestVersion":"2.0.0","changelogUrl":"https://github.com/mere1y/ai-gauge/releases/tag/v2.0.0"}
+{"type":"updateAvailable","currentVersion":"1.1.1","latestVersion":"2.0.0","changelogUrl":"https://github.com/merely04/ai-gauge/compare/v1.1.1...v2.0.0"}
 ```
+
+- `changelogUrl` — GitHub compare URL between the user's `currentVersion` and the incoming `latestVersion`. Opens a view showing all commits and diffs added since the user's install. If `currentVersion === latestVersion` or `currentVersion` is missing, falls back to the single-tag release page. Format: `https://github.com/merely04/ai-gauge/compare/v{currentVersion}...v{latestVersion}`.
 
 #### `updateInstalling`
 ```json
@@ -193,8 +195,10 @@ Broadcast when the daemon detects or performs updates.
 
 #### `updateComplete`
 ```json
-{"type":"updateComplete","reason":"completed","installedVersion":"2.0.0"}
+{"type":"updateComplete","reason":"completed","fromVersion":"1.1.1","installedVersion":"2.0.0"}
 ```
+- `fromVersion` — the pre-update `packageVersion` (i.e. the version the user was running immediately before this update cycle started). Used by clients (macOS menubar) to generate a compare URL linking to the diff between the old and new versions.
+- `installedVersion` — the version the daemon just installed. Matches `state.latestVersion` at the moment of broadcast.
 After this broadcast, daemon calls `process.exit(0)`. systemd/launchd restart it automatically.
 
 #### `updateCheckFailed`

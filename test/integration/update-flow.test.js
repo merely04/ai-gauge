@@ -2,6 +2,7 @@ import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createUpdateLifecycle } from '../../lib/update-lifecycle.js';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..');
 const SERVER_BIN = join(REPO_ROOT, 'bin', 'ai-gauge-server');
@@ -142,7 +143,62 @@ describe('update flow — end-to-end integration', () => {
     expect(messages.length).toBeGreaterThanOrEqual(1);
     expect(messages[0].latestVersion).toBe('99.0.0');
     expect(messages[0].type).toBe('updateAvailable');
-    expect(messages[0].changelogUrl).toMatch(/github\.com.*releases.*v99\.0\.0/);
+    expect(messages[0].changelogUrl).toMatch(/github\.com.*compare.*v.*\.\.\.v99\.0\.0/);
+  }, 15000);
+
+  test('updateComplete broadcast includes fromVersion and installedVersion', async () => {
+    const cacheFile = join(home, 'Library', 'Caches', 'ai-gauge', 'update-check.json');
+    writeFileSync(
+      cacheFile,
+      JSON.stringify({ lastCheckedAt: 100, latestVersion: '99.0.0', currentVersion: PACKAGE_VERSION }),
+    );
+
+    const broadcasts = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalSpawn = Bun.spawn;
+    // getUpdateCacheFilePath() reads Bun.env.HOME directly — override it to the test home
+    const originalHome = process.env.HOME;
+    process.env.HOME = home;
+
+    globalThis.setTimeout = () => 0;
+    Bun.spawn = () => ({
+      exited: Promise.resolve(0),
+      stderr: new ReadableStream({ start(controller) { controller.close(); } }),
+      kill() {},
+    });
+
+    try {
+      const lifecycle = createUpdateLifecycle({
+        packageVersion: PACKAGE_VERSION,
+        registryUrl: `http://localhost:${registryPort}`,
+        stateDir: join(home, '.state', 'ai-gauge'),
+        installBinaryDir: join(home, '.bin', 'ai-gauge-server'),
+        fetchTimeoutMs: 1000,
+        spawnTimeoutMs: 1000,
+        intervalMs: 100000,
+        initialDelayMs: 100000,
+        readConfig: async () => ({}),
+        broadcast: (msg) => broadcasts.push(msg),
+        systemNotify: async () => {},
+        logger: () => {},
+        env: { HOME: home, PATH: process.env.PATH },
+        platform: 'darwin',
+      });
+
+      await lifecycle.start();
+      await lifecycle.doInstall();
+      lifecycle.cancel();
+
+      const complete = broadcasts.find((msg) => msg.type === 'updateComplete');
+      expect(complete).toBeDefined();
+      expect(complete.fromVersion).toBe(PACKAGE_VERSION);
+      expect(complete.installedVersion).toBe('99.0.0');
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+      Bun.spawn = originalSpawn;
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+    }
   }, 15000);
 
   test('scheduled check is skipped in CI environment', async () => {

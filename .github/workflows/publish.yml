@@ -61,3 +61,69 @@ jobs:
       - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  create-github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download macOS binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-gauge-menubar
+          path: bin/
+
+      - name: Tar .app bundle for release asset
+        run: |
+          cd bin && tar -czf AIGauge.app.tar.gz AIGauge.app && cd ..
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          # Extract this release's section from CHANGELOG.md (between "## [X.Y.Z]" headers)
+          BODY=$(awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, "## [" ver "]")) { found=1; next }
+            }
+            found { print }
+          ' CHANGELOG.md)
+
+          if [ -z "$BODY" ]; then
+            echo "::warning::No CHANGELOG entry for v$VERSION — using auto-generated notes"
+            gh release create "$GITHUB_REF_NAME" \
+              --generate-notes \
+              --title "$GITHUB_REF_NAME" \
+              bin/ai-gauge-menubar \
+              bin/AIGauge.app.tar.gz
+            exit 0
+          fi
+
+          # Append compare URL footer if previous tag exists
+          PREV_TAG=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            BODY="$BODY
+
+---
+
+**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${GITHUB_REF_NAME}"
+          fi
+
+          echo "$BODY" > /tmp/release-notes.md
+
+          gh release create "$GITHUB_REF_NAME" \
+            --notes-file /tmp/release-notes.md \
+            --title "$GITHUB_REF_NAME" \
+            bin/ai-gauge-menubar \
+            bin/AIGauge.app.tar.gz

@@ -7,17 +7,21 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [1.2.2] — 2026-04-20
+## [1.2.3] — 2026-04-20
 
 ### Added
-- `displayMode` config key for compact menubar/waybar display variants: `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`.
-- Display mode submenu in macOS menubar (**Display mode ▶**), Linux walker UI (`ai-gauge-config`), and right-click menu (`ai-gauge-menu`).
+- **`displayMode`** config key for compact menubar/waybar display variants: `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`. Display mode submenu in macOS menubar (**Display mode ▶**), Linux walker UI (`ai-gauge-config`), and right-click menu (`ai-gauge-menu`).
+- **GitHub compare URLs in update notifications**: "View changelog" now opens `https://github.com/merely04/ai-gauge/compare/v{old}...v{new}` showing the actual diff (commits + file changes) between the user's version and the new one. Previously the link pointed to the single-tag release page with no context on what changed since the user's install. Falls back to the tag page when the previous version is unknown (equal or missing).
+- **Automated GitHub Release publishing**: `.github/workflows/publish.yml` now creates a GitHub Release on each tag push, populating the body from the matching `## [vX.Y.Z]` section of CHANGELOG.md (extracted via `awk`) and appending a "Full Changelog" compare URL footer. Uploads `bin/ai-gauge-menubar` and a tarball of `bin/AIGauge.app` as release assets.
+- **`updateComplete` broadcast extended** with `fromVersion` (pre-update `packageVersion`) and `installedVersion` (the version just installed). The macOS menubar app uses both to construct a post-update compare URL, giving the user a direct diff from their old version to the new one.
 - `lib/render-waybar.js` — extracted pure render function with injectable clock for deterministic testing.
 - 25 fixture test cases + bun unit tests for all display variants (`test/render-waybar.test.js`, `test/config-schema.test.js`, `test/broadcast-displaymode.test.js`).
+- 6 unit tests for `changelogUrlFor(fromVersion, toVersion)` covering compare/fallback logic (`test/changelog-url.test.js`).
 
 ### Fixed
 - **Phantom update notification** ("v1.2.1 is available" when already on v1.2.1): `buildAvailablePayload()` now drops payloads whose cached `latestVersion <= packageVersion`; `rehydrateFromCache()` only adopts cached versions that are strictly newer; `doCheck()` no-update branch now clears both `state.lastNotifiedVersion` **and** `state.latestVersion` (previously the latter could leak across restarts when `autoCheckUpdates=false`).
-- **About window overflow**: Credits.rtf description shortened and split across 3 narrower lines (≤43 chars each) so the text fits inside the About panel's rounded frame on macOS. Margins were also relaxed, but the real fix was avoiding lines wider than the credits view.
+- **About window overflow**: Credits.rtf description shortened and split across 3 narrower lines (≤43 chars each) so the text fits inside the About panel's rounded frame on macOS. The macOS standard About panel ignores RTF `\margl/\margr`, so the real fix was avoiding lines wider than the credits view.
+- **Typo `github.com/mere1y/ai-gauge` → `github.com/merely04/ai-gauge`** across `lib/update-lifecycle.js` (production URL generator), `macos/AIGauge/Sources/AIGauge/AIGaugeApp.swift` (test hook), `CHANGELOG.md` footer, and `AGENTS.md` protocol example. The real GitHub repo lives at `merely04/ai-gauge` (confirmed via `git remote -v`); the old URLs were redirected by GitHub but showed the wrong canonical in address bar.
 
 ## [1.2.1] — 2026-04-19
 
@@ -114,4 +118,4 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.1.1] — previous releases
 
-Earlier versions are documented in the [GitHub Releases page](https://github.com/mere1y/ai-gauge/releases).
+Earlier versions are documented in the [GitHub Releases page](https://github.com/merely04/ai-gauge/releases).

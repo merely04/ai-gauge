@@ -173,6 +173,9 @@ final class UsageModel: ObservableObject {
         updateAvailable = false
         latestVersion = nil
         updateError = nil
+        if let from = p.fromVersion, let to = p.installedVersion, !from.isEmpty, !to.isEmpty {
+            changelogUrl = "https://github.com/merely04/ai-gauge/compare/v\(from)...v\(to)"
+        }
     }
 
     func scheduleUpdateSuccessClear(after seconds: Double = 10) {

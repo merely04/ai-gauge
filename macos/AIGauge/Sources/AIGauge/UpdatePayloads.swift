@@ -22,6 +22,7 @@ struct UpdateFailedPayload: Decodable {
 struct UpdateCompletePayload: Decodable {
     let type: String
     let installedVersion: String?
+    let fromVersion: String?
 }
 
 struct UpdateCheckFailedPayload: Decodable {

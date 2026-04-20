@@ -76,11 +76,12 @@ struct AIGaugeApp: App {
         Task { @MainActor in
             if env["AIGAUGE_TEST_UPDATE_AVAILABLE"] == "1" {
                 let testVersion = env["AIGAUGE_TEST_LATEST_VERSION"] ?? "9.9.9"
+                let currentVersion = "1.0.0"
                 let payload = UpdateAvailablePayload(
                     type: "updateAvailable",
-                    currentVersion: nil,
+                    currentVersion: currentVersion,
                     latestVersion: testVersion,
-                    changelogUrl: "https://github.com/mere1y/ai-gauge/releases/tag/v\(testVersion)"
+                    changelogUrl: "https://github.com/merely04/ai-gauge/compare/v\(currentVersion)...v\(testVersion)"
                 )
                 usage.handleUpdateAvailable(payload)
             }
