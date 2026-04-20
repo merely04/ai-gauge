@@ -266,4 +266,26 @@ describe('update flow — end-to-end integration', () => {
     expect(messages.length).toBeGreaterThanOrEqual(1);
     expect(messages[0].latestVersion).toBe('99.0.0');
   }, 15000);
+
+  test('does not broadcast updateAvailable when cache equals current version', async () => {
+    const cacheDir = join(home, 'Library', 'Caches', 'ai-gauge');
+    mkdirSync(cacheDir, { recursive: true });
+    const cacheFile = join(cacheDir, 'update-check.json');
+    writeFileSync(
+      cacheFile,
+      JSON.stringify({ lastCheckedAt: 100, latestVersion: PACKAGE_VERSION, currentVersion: PACKAGE_VERSION }),
+    );
+    registry = startMockRegistry({ port: registryPort, latestVersion: PACKAGE_VERSION });
+    server = startServer({
+      home,
+      registryPort,
+      wsPort,
+      env: { CI: 'true', AIGAUGE_UPDATE_CHECK_INITIAL_DELAY_MS: '10000000' },
+    });
+    const ready = await waitFor(() => server.stderr.includes('listening on ws://'));
+    expect(ready).toBe(true);
+    await new Promise((r) => setTimeout(r, 500));
+    const messages = await listenBroadcasts({ wsPort, limitMs: 1500, filter: 'updateAvailable' });
+    expect(messages.length).toBe(0);
+  }, 15000);
 });
