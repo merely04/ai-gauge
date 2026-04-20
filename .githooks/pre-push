@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# .githooks/pre-push — validates version consistency before pushing a release tag.
+# Activated via `git config core.hooksPath .githooks` (done by package.json `prepare`).
+#
+# Stdin format (per `man githooks`): one line per ref being pushed:
+#   <local-ref> <local-oid> <remote-ref> <remote-oid>
+# Args: $1 = remote name, $2 = remote URL.
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+TAG_TO_VALIDATE=""
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+  if [[ "$local_oid" =~ ^0+$ ]]; then
+    continue
+  fi
+  if [[ "$remote_ref" =~ ^refs/tags/(v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+    TAG_TO_VALIDATE="${BASH_REMATCH[1]}"
+    break
+  fi
+done
+
+if [[ -z "$TAG_TO_VALIDATE" ]]; then
+  exit 0
+fi
+
+echo "Pre-push: validating release for tag $TAG_TO_VALIDATE..." >&2
+
+if ! bash "$REPO_ROOT/scripts/validate-release.sh" --tag "$TAG_TO_VALIDATE"; then
+  echo "" >&2
+  echo "Pre-push validation FAILED for $TAG_TO_VALIDATE." >&2
+  echo "Fix the mismatches above, amend the bump commit, re-tag, and push again." >&2
+  echo "Emergency bypass (use sparingly): git push --no-verify" >&2
+  exit 1
+fi
+
+echo "Pre-push: $TAG_TO_VALIDATE validation passed." >&2
+exit 0

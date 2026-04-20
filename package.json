@@ -30,7 +30,9 @@
   ],
   "scripts": {
     "test": "bun test",
-    "test:watch": "bun test --watch"
+    "test:watch": "bun test --watch",
+    "prepare": "git config core.hooksPath .githooks || true",
+    "validate-release": "bash scripts/validate-release.sh"
   },
   "keywords": [
     "waybar",
