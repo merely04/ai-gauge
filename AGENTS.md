@@ -58,7 +58,7 @@ Token sources (config `tokenSource` field):
 
 State/config paths (never relocate without updating every script):
 
-- Config: `~/.config/ai-gauge/config.json` (`{tokenSource, plan}`)
+- Config: `~/.config/ai-gauge/config.json` (`{tokenSource, plan, displayMode, autoCheckUpdates}`)
 - Runtime state: `${XDG_RUNTIME_DIR:-/tmp}/ai-gauge/usage.json` (atomic write via temp + `renameSync`)
 - `${stateDir}/update-state.json` — latest update availability (read by `bin/ai-gauge-menu`)
 - `${cacheDir}/update-check.json` — last check result with 24h TTL
@@ -117,7 +117,7 @@ Server broadcasts the **raw Anthropic API response** merged with a `meta` field 
   "seven_day_cowork": null,
   "seven_day_omelette": {"utilization": 0, "resets_at": null},
   "extra_usage": {"is_enabled": true, "monthly_limit": 20000, "used_credits": 18752, "utilization": 93.76, "currency": "USD"},
-  "meta": {"plan": "unknown", "tokenSource": "opencode", "fetchedAt": "2026-04-17T20:27:38.885Z", "version": "1.2.0", "protocolVersion": 1, "autoCheckUpdates": true}
+  "meta": {"plan": "unknown", "tokenSource": "opencode", "displayMode": "full", "fetchedAt": "2026-04-17T20:27:38.885Z", "version": "1.2.0", "protocolVersion": 1, "autoCheckUpdates": true}
 }
 ```
 
@@ -129,6 +129,7 @@ Field notes:
 - `meta.version` — the daemon's own ai-gauge version (from `package.json`).
 - `meta.protocolVersion` — currently `1` (for forward compat).
 - `meta.autoCheckUpdates` — current value of the `autoCheckUpdates` config key.
+- `meta.displayMode` — current display mode: `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`. Clients fall back to `full` if absent or unrecognized.
 - Any of the `seven_day_*` windows may be `null`.
 
 Client formatting responsibilities:
@@ -163,9 +164,10 @@ Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, write
 ```json
 {"type":"setConfig","key":"plan","value":"team"}
 {"type":"setConfig","key":"tokenSource","value":"opencode"}
+{"type":"setConfig","key":"displayMode","value":"bar-dots"}
 ```
 
-- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`; `tokenSource` → `claude-code`, `opencode`; `autoCheckUpdates` → `true`, `false`
+- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`; `tokenSource` → `claude-code`, `opencode`; `autoCheckUpdates` → `true`, `false`; `displayMode` → `full`, `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
 - Server **rejects** any value outside the canonical enum (logs warning, config unchanged)
 - Do NOT change the raw-broadcast shape without updating both `bin/ai-gauge-waybar` and `macos/AIGauge/Sources/AIGauge/UsageModel.swift` in the same commit.
 

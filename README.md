@@ -175,6 +175,7 @@ Config file: `~/.config/ai-gauge/config.json`
 |-------|--------|-------------|
 | `tokenSource` | `claude-code` (default), `opencode` | OAuth token source |
 | `plan` | `max`, `pro`, `team`, `enterprise`, `unknown` | Subscription plan (shown in tooltip) |
+| `displayMode` | `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset` | Display format for menubar/waybar |
 
 Change settings via menu (macOS submenu / Linux walker UI) or CLI (works on both):
 

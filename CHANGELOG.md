@@ -5,6 +5,15 @@ All notable changes to ai-gauge are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `displayMode` config key for compact menubar/waybar display variants: `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
+- Display mode submenu in macOS menubar (Display mode ▶)
+- Display mode submenu in Linux walker UI (`ai-gauge-config`) and right-click menu (`ai-gauge-menu`)
+- `lib/render-waybar.js` — extracted pure render function with test-clock injection
+- 25 fixture test cases + bun unit tests for all display variants
+
 ## [1.2.1] — 2026-04-19
 
 ### Fixed
