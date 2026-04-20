@@ -123,6 +123,7 @@ async function loadCachedDataFromDisk(fallbackPlan) {
           version: PACKAGE_VERSION,
           protocolVersion: PROTOCOL_VERSION,
           autoCheckUpdates: config.autoCheckUpdates ?? true,
+          displayMode: data?.meta?.displayMode ?? config.displayMode ?? 'full',
         },
       };
       return true;
@@ -202,6 +203,7 @@ async function fetchUsage() {
         version: PACKAGE_VERSION,
         protocolVersion: PROTOCOL_VERSION,
         autoCheckUpdates: config.autoCheckUpdates ?? true,
+        displayMode: config.displayMode ?? 'full',
       },
     };
 
@@ -296,6 +298,7 @@ async function handleSetConfig(cmd) {
           tokenSource: result.config.tokenSource,
           ...(key === 'plan' ? { plan: value } : {}),
           ...(key === 'autoCheckUpdates' ? { autoCheckUpdates: value } : {}),
+          ...(key === 'displayMode' ? { displayMode: value } : {}),
         },
       };
       broadcast(cachedData);
