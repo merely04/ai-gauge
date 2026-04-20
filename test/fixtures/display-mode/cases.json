@@ -1,0 +1,702 @@
+[
+  {
+    "name": "44pct-full",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 44,
+          "resets_at": "2026-04-20T04:31:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "full",
+    "expected": {
+      "text": "✦ 44% 2h31m · 15%w",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  44%  (resets in 2h 31m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "44pct-percent-only",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 44,
+          "resets_at": "2026-04-20T04:31:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "percent-only",
+    "expected": {
+      "text": "✦ 44%",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  44%  (resets in 2h 31m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "44pct-bar-dots",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 44,
+          "resets_at": "2026-04-20T04:31:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "bar-dots",
+    "expected": {
+      "text": "✦ ●●●●○○○○○○",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  44%  (resets in 2h 31m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "44pct-number-bar",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 44,
+          "resets_at": "2026-04-20T04:31:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "number-bar",
+    "expected": {
+      "text": "44% ▓▓▓▓░░░░░░",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  44%  (resets in 2h 31m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "44pct-time-to-reset",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 44,
+          "resets_at": "2026-04-20T04:31:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "time-to-reset",
+    "expected": {
+      "text": "⏱ 2h31m",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  44%  (resets in 2h 31m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "3pct-bar-dots",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 3,
+          "resets_at": "2026-04-20T06:45:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "bar-dots",
+    "expected": {
+      "text": "✦ ○○○○○○○○○○",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  3%  (resets in 4h 45m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "3pct-number-bar",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 3,
+          "resets_at": "2026-04-20T06:45:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "number-bar",
+    "expected": {
+      "text": "3% ░░░░░░░░░░",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  3%  (resets in 4h 45m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "99pct-bar-dots",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 99,
+          "resets_at": "2026-04-20T02:12:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "bar-dots",
+    "expected": {
+      "text": "✦ ●●●●●●●●●○",
+      "class": "critical",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  99%  (resets in 12m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "99pct-number-bar",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 99,
+          "resets_at": "2026-04-20T02:12:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "number-bar",
+    "expected": {
+      "text": "99% ▓▓▓▓▓▓▓▓▓░",
+      "class": "critical",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  99%  (resets in 12m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "134pct-bar-dots",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 134,
+          "resets_at": null
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "bar-dots",
+    "expected": {
+      "text": "✦ ●●●●●●●●●●",
+      "class": "critical",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  134%\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "134pct-number-bar",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 134,
+          "resets_at": null
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "number-bar",
+    "expected": {
+      "text": "134% ▓▓▓▓▓▓▓▓▓▓",
+      "class": "critical",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  134%\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "134pct-time-to-reset",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 134,
+          "resets_at": null
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "time-to-reset",
+    "expected": {
+      "text": "⏱ --",
+      "class": "critical",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  134%\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "44pct-null-resets-time-to-reset",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 44,
+          "resets_at": null
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "time-to-reset",
+    "expected": {
+      "text": "⏱ --",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  44%\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "44pct-past-time-to-reset",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 44,
+          "resets_at": "2026-04-20T01:59:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "time-to-reset",
+    "expected": {
+      "text": "⏱ now",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  44%  (resets in now)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "0pct-bar-dots",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 0,
+          "resets_at": "2026-04-20T07:00:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "bar-dots",
+    "expected": {
+      "text": "✦ ○○○○○○○○○○",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  0%  (resets in 5h 0m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "0pct-number-bar",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 0,
+          "resets_at": "2026-04-20T07:00:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "number-bar",
+    "expected": {
+      "text": "0% ░░░░░░░░░░",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  0%  (resets in 5h 0m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "0pct-time-to-reset",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 0,
+          "resets_at": "2026-04-20T07:00:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "time-to-reset",
+    "expected": {
+      "text": "⏱ 5h00m",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  0%  (resets in 5h 0m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "0pct-percent-only",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 0,
+          "resets_at": "2026-04-20T07:00:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "percent-only",
+    "expected": {
+      "text": "✦ 0%",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  0%  (resets in 5h 0m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "100pct-bar-dots",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 100,
+          "resets_at": "2026-04-20T02:00:01.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "bar-dots",
+    "expected": {
+      "text": "✦ ●●●●●●●●●●",
+      "class": "critical",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  100%  (resets in 0m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "100pct-number-bar",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 100,
+          "resets_at": "2026-04-20T02:00:01.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "number-bar",
+    "expected": {
+      "text": "100% ▓▓▓▓▓▓▓▓▓▓",
+      "class": "critical",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  100%  (resets in 0m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "50pct-bar-dots",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 50,
+          "resets_at": "2026-04-20T05:00:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "bar-dots",
+    "expected": {
+      "text": "✦ ●●●●●○○○○○",
+      "class": "warning",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  50%  (resets in 3h 0m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "50pct-number-bar",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 50,
+          "resets_at": "2026-04-20T05:00:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "number-bar",
+    "expected": {
+      "text": "50% ▓▓▓▓▓░░░░░",
+      "class": "warning",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  50%  (resets in 3h 0m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "80pct-bar-dots",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 80,
+          "resets_at": "2026-04-20T03:00:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "bar-dots",
+    "expected": {
+      "text": "✦ ●●●●●●●●○○",
+      "class": "critical",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  80%  (resets in 1h 0m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "80pct-percent-only",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 80,
+          "resets_at": "2026-04-20T03:00:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "percent-only",
+    "expected": {
+      "text": "✦ 80%",
+      "class": "critical",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  80%  (resets in 1h 0m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  },
+  {
+    "name": "44pct-invalid-mode",
+    "input": {
+      "now": "2026-04-20T02:00:00.000000+00:00",
+      "data": {
+        "five_hour": {
+          "utilization": 44,
+          "resets_at": "2026-04-20T04:31:00.000000+00:00"
+        },
+        "seven_day": {
+          "utilization": 15,
+          "resets_at": "2026-04-26T19:54:00.000000+00:00"
+        },
+        "seven_day_sonnet": null,
+        "extra_usage": null,
+        "meta": {
+          "plan": "max"
+        }
+      },
+      "updateState": {}
+    },
+    "displayMode": "banana-invalid",
+    "expected": {
+      "text": "✦ 44% 2h31m · 15%w",
+      "class": "normal",
+      "tooltip": "Claude Code Usage\n───────────────\n5-hour:  44%  (resets in 2h 31m)\nWeekly:  15%  (resets in 6d 17h 54m)\n───────────────\nPlan: max"
+    }
+  }
+]
