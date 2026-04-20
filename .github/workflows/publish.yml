@@ -104,6 +104,10 @@ jobs:
           ' CHANGELOG.md)
           if [ -z "$BODY" ]; then
             echo "::warning::No CHANGELOG entry for v$VERSION — using auto-generated notes"
+            if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+              echo "::warning::Release $GITHUB_REF_NAME already exists — deleting and recreating"
+              gh release delete "$GITHUB_REF_NAME" --yes --cleanup-tag=false
+            fi
             gh release create "$GITHUB_REF_NAME" \
               --generate-notes \
               --title "$GITHUB_REF_NAME" \
@@ -119,6 +123,10 @@ jobs:
               printf '**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
                 "$GITHUB_REPOSITORY" "$PREV_TAG" "$GITHUB_REF_NAME"
             } >> /tmp/release-notes.md
+          fi
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "::warning::Release $GITHUB_REF_NAME already exists — deleting and recreating"
+            gh release delete "$GITHUB_REF_NAME" --yes --cleanup-tag=false
           fi
           gh release create "$GITHUB_REF_NAME" \
             --notes-file /tmp/release-notes.md \

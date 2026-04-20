@@ -22,6 +22,14 @@ describe('changelogUrlFor', () => {
     expect(changelogUrlFor('1.2.1', '2.0.0')).toBe('https://github.com/merely04/ai-gauge/compare/v1.2.1...v2.0.0');
   });
 
+  test('prerelease in target version → compare URL', () => {
+    expect(changelogUrlFor('1.2.1', '1.2.3-beta.1')).toBe('https://github.com/merely04/ai-gauge/compare/v1.2.1...v1.2.3-beta.1');
+  });
+
+  test('prerelease in source version → compare URL', () => {
+    expect(changelogUrlFor('1.2.1-alpha.1', '1.2.1')).toBe('https://github.com/merely04/ai-gauge/compare/v1.2.1-alpha.1...v1.2.1');
+  });
+
   test('no mere1y typo in any output', () => {
     const urls = [
       changelogUrlFor('1.2.1', '1.2.2'),

@@ -66,4 +66,38 @@ final class UpdateTests: XCTestCase {
         XCTAssertEqual(payload.command, "npm install -g ai-gauge")
         XCTAssertTrue(payload.clipboardCopied ?? false)
     }
+
+    func testHandleUpdateComplete_setsCompareUrlWhenVersionsPresent() {
+        let model = UsageModel()
+        let payload = UpdateCompletePayload(
+            type: "updateComplete",
+            installedVersion: "1.2.3",
+            fromVersion: "1.2.1"
+        )
+
+        model.handleUpdateComplete(payload)
+
+        XCTAssertEqual(
+            model.changelogUrl,
+            "https://github.com/merely04/ai-gauge/compare/v1.2.1...v1.2.3"
+        )
+    }
+
+    func testHandleUpdateComplete_preservesExistingChangelogUrlWhenVersionsMissing() {
+        let model = UsageModel()
+        model.changelogUrl = "https://github.com/merely04/ai-gauge/compare/v1.2.1...v1.2.2"
+
+        let payload = UpdateCompletePayload(
+            type: "updateComplete",
+            installedVersion: nil,
+            fromVersion: nil
+        )
+
+        model.handleUpdateComplete(payload)
+
+        XCTAssertEqual(
+            model.changelogUrl,
+            "https://github.com/merely04/ai-gauge/compare/v1.2.1...v1.2.2"
+        )
+    }
 }
