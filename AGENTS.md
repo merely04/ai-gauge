@@ -305,7 +305,7 @@ Both setup and uninstall are idempotent — they guard with `grep -q` before pat
 Not npm packages — system binaries. None are declared anywhere; if you add a new one, document it in `docs/LLM_INSTALL.md` under Prerequisites.
 
 - **Required (all platforms)**: `bun`, `bash`, `jq`, `sed`, `readlink`.
-- **Required (Linux)**: `python3` (setup only), `systemctl` (user).
+- **Required (Linux)**: `python3` (waybar setup; pre-release validator for `Info.plist` parsing via `plistlib`), `systemctl` (user).
 - **Required (macOS)**: `launchctl`, `plutil`, `codesign`, `sips`, `iconutil`, `lipo` (all built into macOS). Xcode Command Line Tools (for `swift build`) required only when rebuilding the Swift binary locally; users installing the published npm package get the pre-built `bin/AIGauge.app`.
 - **Desktop integration (Linux)**: `notify-send` (libnotify), `wl-copy` (wl-clipboard), `waybar`.
 - **Optional, Omarchy distro**: `omarchy-launch-walker` (menu/settings UI), `omarchy-restart-waybar`. Scripts degrade gracefully when these are missing.
@@ -316,7 +316,35 @@ Not npm packages — system binaries. None are declared anywhere; if you add a n
 - Trigger: `git tag vX.Y.Z && git push --tags`. CI is `.github/workflows/publish.yml`.
 - CI uses **Node 22 + `npm publish`** (not Bun) with `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`. This is fine because publishing is just tarball upload — the code still runs on Bun at the user's machine.
 - Published files (from `package.json` `files`): `bin/` (including the full `bin/AIGauge.app/**` bundle for macOS), `lib/`, both `*.plist.template` files, `README.md`, `docs/`. `assets/`, `macos/` sources, and `.sisyphus/` are excluded.
-- Bump `"version"` in `package.json` manually before tagging. The lib/streamdock-plugin/manifest.json `Version` field is separate — update it only when the StreamDock plugin protocol actually changes.
+- Bump `"version"` in `package.json` manually before tagging. The lib/streamdock-plugin/manifest.json `Version` field is separate — update it only when the StreamDock plugin protocol actually changes. **See Pre-release checklist below for the full procedure, including CHANGELOG and `Info.plist` sync.**
+
+### Pre-release checklist
+
+Before tagging a release, run through this list in order. The pre-push hook will catch violations, but fixing them pre-push is cheaper than reverting a pushed tag.
+
+1. **Bump `package.json` version** — edit `"version"` to the new `X.Y.Z`.
+2. **Update `CHANGELOG.md`** — promote the content currently under `## [Unreleased]` into a new `## [X.Y.Z] — YYYY-MM-DD` section (use em-dash `—`, the repo style). Leave a fresh empty `## [Unreleased]` on top.
+3. **Sync the macOS `Info.plist` files** — on macOS, run `bash scripts/build-macos-binary.sh`. It stamps BOTH `macos/AIGauge/Sources/AIGauge/Info.plist` and the rebuilt `bin/AIGauge.app/Contents/Info.plist` from `package.json` (source is stamped first, then copied into the bundle). On Linux (no Swift toolchain), manually edit both plist files — update both `CFBundleShortVersionString` and `CFBundleVersion`.
+4. **Run the validator** — `bash scripts/validate-release.sh`. Must exit 0. If it fails, fix the mismatch it reports and re-run.
+5. **Commit the bump** — `git commit -am "release: vX.Y.Z"`.
+6. **Tag and push** — `git tag vX.Y.Z && git push origin master --tags`. The pre-push hook re-runs the validator with `--tag vX.Y.Z` and aborts the push on mismatch.
+7. **Post-push** — CI builds the macOS binary, publishes to npm, and creates a GitHub Release from the matching CHANGELOG entry.
+
+### Hook activation
+
+The pre-push hook lives at `.githooks/pre-push` and is activated by `git config core.hooksPath .githooks`.
+
+- **Automatic**: `package.json` has a `prepare` script (`git config core.hooksPath .githooks || true`) that runs on `bun install` / `npm install` after cloning.
+- **Manual** (if `prepare` didn't run): `git config core.hooksPath .githooks`. Verify with `git config --get core.hooksPath` — expected output: `.githooks`.
+- **Bypass** (use sparingly): `git push --no-verify`. Only acceptable when the validator itself is broken and blocks a necessary push. If you reach for `--no-verify` regularly, the validator is wrong — fix it.
+
+### Validator usage
+
+- **Standalone** (check current repo state): `bash scripts/validate-release.sh` or `bun run validate-release`.
+- **With explicit tag** (also asserts the tag matches `v<package.json version>`): `bash scripts/validate-release.sh --tag v1.2.3`.
+- **Exit codes**: `0` success, `1` version mismatch (diff on stderr), `2` required file missing.
+- **Test override**: `AIGAUGE_REPO_ROOT=/path/to/fixture bash scripts/validate-release.sh` — point at a fixture root. Used by `test/validate-release.test.js`.
+- **Linux fallback override**: `AIGAUGE_SKIP_PLUTIL=1 bash scripts/validate-release.sh` — forces the python3 `plistlib` branch even on macOS (exercises the Linux code path).
 
 ## Editing gotchas
 
@@ -326,5 +354,6 @@ Not npm packages — system binaries. None are declared anywhere; if you add a n
 - **The `ai-gauge-server` sends threshold notifications** through `systemNotify()` from `lib/notify.js`. On Linux that shells out to `notify-send`; on macOS it no-ops (stderr log) because the Swift menubar handles it via `UNUserNotificationCenter` after receiving the `{type:"notify",...}` WS broadcast. The `alerted80` flag still gates duplicate alerts on the server side, resetting below 50%.
 - **Setup's waybar JSON patch is fragile** — it uses string replacement on `config.jsonc`, not a real JSON parser (jsonc allows comments). Test changes against a real Omarchy/Hyprland waybar config.
 - **`claudeVersion` at the top of `bin/ai-gauge-server`** (currently `'2.1.100'`) is the User-Agent value sent to the Anthropic usage endpoint. Auto-updated from a real Claude install if available. Bumping the fallback without reason can break fetches if Anthropic validates it.
-- **Commit style**: repo has no commit hooks, no CHANGELOG, no PR template. Keep commits small and focused; no tests to run.
+- **Commit style**: repo has no PR template. Keep commits small and focused. Tests live under `test/` and run via `bun test`. `CHANGELOG.md` is required — every release needs a matching `## [X.Y.Z] — YYYY-MM-DD` section (see Pre-release checklist).
+- **Pre-push hook lives at `.githooks/pre-push`** and is activated by `git config core.hooksPath .githooks`. The hook validates version consistency ONLY when the push includes a `vX.Y.Z` tag — regular branch pushes are untouched. Activated automatically via `package.json` `prepare` script (triggered by `bun install` / `npm install`). Bypass with `git push --no-verify` only if the validator itself is broken.
 - **`.gitignore` ignores `.sisyphus/`, `node_modules/`, `bun.lock*`** — `bun link` creates `node_modules/.bin/` symlinks during local dev, don't commit them.
