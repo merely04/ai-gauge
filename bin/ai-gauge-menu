@@ -50,6 +50,7 @@ fi
 
 # Menu
 ITEMS=()
+current_display_mode=$(jq -r '.displayMode // "full"' "$HOME/.config/ai-gauge/config.json" 2>/dev/null || echo "full")
 
 # Update items
 if [[ "$UPDATE_INSTALLING" == "true" ]]; then
@@ -68,6 +69,7 @@ ITEMS+=("↻  Refresh Now")
 ITEMS+=("  Copy Usage")
 ITEMS+=("  Raw Data")
 ITEMS+=("⚙  Settings")
+ITEMS+=("🎨  Display mode: ${current_display_mode}")
 
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
     printf '%s\n' "${ITEMS[@]}"
@@ -129,5 +131,11 @@ case "$SELECTED" in
         ;;
     *"Settings"*)
         ai-gauge-config
+        ;;
+    *"Display mode"*)
+        choice=$(printf '%s\n' "full" "percent-only" "bar-dots" "number-bar" "time-to-reset" | omarchy-launch-walker --placeholder "Choose display mode" 2>/dev/null) || exit 0
+        if [[ -n "$choice" ]]; then
+            "${SCRIPT_DIR}/ai-gauge-config" set displayMode "$choice"
+        fi
         ;;
 esac
