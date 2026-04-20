@@ -78,9 +78,14 @@ jobs:
           name: ai-gauge-menubar
           path: bin/
 
+      - name: Restore executable bit on macOS binary
+        run: |
+          chmod +x bin/ai-gauge-menubar
+          chmod +x bin/AIGauge.app/Contents/MacOS/AIGauge
+
       - name: Tar .app bundle for release asset
         run: |
-          cd bin && tar -czf AIGauge.app.tar.gz AIGauge.app && cd ..
+          cd bin && tar -czf AIGauge.app.tar.gz AIGauge.app
 
       - name: Create GitHub Release
         env:
@@ -90,8 +95,6 @@ jobs:
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME#v}"
-
-          # Extract this release's section from CHANGELOG.md (between "## [X.Y.Z]" headers)
           BODY=$(awk -v ver="$VERSION" '
             /^## \[/ {
               if (found) exit
@@ -99,7 +102,6 @@ jobs:
             }
             found { print }
           ' CHANGELOG.md)
-
           if [ -z "$BODY" ]; then
             echo "::warning::No CHANGELOG entry for v$VERSION — using auto-generated notes"
             gh release create "$GITHUB_REF_NAME" \
@@ -109,19 +111,15 @@ jobs:
               bin/AIGauge.app.tar.gz
             exit 0
           fi
-
-          # Append compare URL footer if previous tag exists
+          printf '%s\n' "$BODY" > /tmp/release-notes.md
           PREV_TAG=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
-            BODY="$BODY
-
----
-
-**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${GITHUB_REF_NAME}"
+            {
+              printf '\n---\n\n'
+              printf '**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+                "$GITHUB_REPOSITORY" "$PREV_TAG" "$GITHUB_REF_NAME"
+            } >> /tmp/release-notes.md
           fi
-
-          echo "$BODY" > /tmp/release-notes.md
-
           gh release create "$GITHUB_REF_NAME" \
             --notes-file /tmp/release-notes.md \
             --title "$GITHUB_REF_NAME" \
