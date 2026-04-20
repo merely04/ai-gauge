@@ -31,7 +31,12 @@ beforeAll(async () => {
 
           if (msg.type === "setConfig") {
             // Validate key
-            if (!["plan", "tokenSource"].includes(msg.key)) {
+            if (![
+              "plan",
+              "tokenSource",
+              "autoCheckUpdates",
+              "displayMode",
+            ].includes(msg.key)) {
               ws.send(
                 JSON.stringify({
                   type: "error",
@@ -66,6 +71,20 @@ beforeAll(async () => {
                 JSON.stringify({
                   type: "error",
                   message: "Invalid tokenSource value",
+                })
+              );
+              return;
+            }
+
+            // Validate displayMode values
+            if (
+              msg.key === "displayMode" &&
+              !["full", "percent-only", "bar-dots", "number-bar", "time-to-reset"].includes(msg.value)
+            ) {
+              ws.send(
+                JSON.stringify({
+                  type: "error",
+                  message: "Invalid displayMode value",
                 })
               );
               return;
