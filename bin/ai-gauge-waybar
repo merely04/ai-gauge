@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 const WS_URL = Bun.env.AIGAUGE_WS_URL || 'ws://localhost:19876';
+import { render } from '../lib/render-waybar.js';
 const RECONNECT_DELAY = 5_000;
 
 let lastUsageCache = null;
@@ -11,124 +12,6 @@ let lastUpdateState = {
   error: null,
   changelogUrl: null,
 };
-
-function getRemainingSeconds(resetsAt) {
-  if (!resetsAt || resetsAt === 'null') return null;
-
-  const resetMs = new Date(resetsAt).getTime();
-  if (!Number.isFinite(resetMs)) return 0;
-
-  return Math.floor((resetMs - Date.now()) / 1000);
-}
-
-function formatDuration(resetsAt) {
-  const seconds = getRemainingSeconds(resetsAt);
-  if (seconds == null) return '';
-  if (seconds <= 0) return 'now';
-
-  const hours = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-
-  if (hours > 0) {
-    return `${hours}h${String(mins).padStart(2, '0')}m`;
-  }
-
-  return `${mins}m`;
-}
-
-function formatDurationLong(resetsAt) {
-  const seconds = getRemainingSeconds(resetsAt);
-  if (seconds == null) return '';
-  if (seconds <= 0) return 'now';
-
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-
-  if (days > 0) {
-    return `${days}d ${hours}h ${mins}m`;
-  }
-
-  if (hours > 0) {
-    return `${hours}h ${mins}m`;
-  }
-
-  return `${mins}m`;
-}
-
-function render(data) {
-  const fivePct = Number(data?.five_hour?.utilization ?? 0);
-  const sevenPct = Number(data?.seven_day?.utilization ?? 0);
-  const fiveInt = Math.round(Number.isFinite(fivePct) ? fivePct : 0);
-  const sevenInt = Math.round(Number.isFinite(sevenPct) ? sevenPct : 0);
-
-  const fiveRemaining = formatDuration(data?.five_hour?.resets_at);
-  const fiveRemainingLong = formatDurationLong(data?.five_hour?.resets_at);
-  const sevenRemainingLong = formatDurationLong(data?.seven_day?.resets_at);
-
-  let cssClass = 'normal';
-  if (fiveInt >= 80) {
-    cssClass = 'critical';
-  } else if (fiveInt >= 50) {
-    cssClass = 'warning';
-  }
-
-  let text = `✦ ${fiveInt}%`;
-  if (fiveRemaining) text += ` ${fiveRemaining}`;
-  text += ` · ${sevenInt}%w`;
-
-  let tooltip = 'Claude Code Usage';
-  tooltip += '\n───────────────';
-  tooltip += `\n5-hour:  ${fiveInt}%`;
-  if (fiveRemainingLong) tooltip += `  (resets in ${fiveRemainingLong})`;
-  tooltip += `\nWeekly:  ${sevenInt}%`;
-  if (sevenRemainingLong) tooltip += `  (resets in ${sevenRemainingLong})`;
-
-  const sonnetPct = data?.seven_day_sonnet?.utilization;
-  if (sonnetPct != null && sonnetPct !== 'null') {
-    const sonnetNum = Number(sonnetPct);
-    const sonnetInt = Math.round(Number.isFinite(sonnetNum) ? sonnetNum : 0);
-    const sonnetRemainingLong = formatDurationLong(data?.seven_day_sonnet?.resets_at);
-
-    tooltip += `\nSonnet:  ${sonnetInt}%`;
-    if (sonnetRemainingLong) tooltip += `  (resets in ${sonnetRemainingLong})`;
-  }
-
-  const extraEnabled = data?.extra_usage?.is_enabled;
-  if (extraEnabled === true || extraEnabled === 'true') {
-    const extraPct = Number(data?.extra_usage?.utilization ?? 0);
-    const extraUsed = Number(data?.extra_usage?.used_credits ?? 0);
-    const extraLimit = Number(data?.extra_usage?.monthly_limit ?? 0);
-    const extraInt = Math.round(Number.isFinite(extraPct) ? extraPct : 0);
-    const extraUsedDollars = ((Number.isFinite(extraUsed) ? extraUsed : 0) / 100).toFixed(2);
-    const extraLimitDollars = Math.round((Number.isFinite(extraLimit) ? extraLimit : 0) / 100);
-
-    tooltip += '\n───────────────';
-    tooltip += `\nExtra: $${extraUsedDollars}/$${extraLimitDollars} (${extraInt}%)`;
-  }
-
-  const plan = data?.meta?.plan ?? 'unknown';
-  tooltip += '\n───────────────';
-  tooltip += `\nPlan: ${plan}`;
-
-  if (lastUpdateState.installing) {
-    cssClass = 'updating';
-    text = '✦ updating...';
-  } else if (lastUpdateState.available && lastUpdateState.version) {
-    text += ' ⬆';
-    cssClass = cssClass === 'normal' ? 'update-available' : `${cssClass} update-available`;
-    tooltip += `\n───────────────\nUpdate: v${lastUpdateState.version} available`;
-    if (lastUpdateState.changelogUrl) {
-      tooltip += `\n${lastUpdateState.changelogUrl}`;
-    }
-  } else if (lastUpdateState.error) {
-    text += ' ⚠';
-    cssClass = cssClass === 'normal' ? 'update-failed' : `${cssClass} update-failed`;
-    tooltip += `\n───────────────\nUpdate failed: ${lastUpdateState.error}`;
-  }
-
-  process.stdout.write(JSON.stringify({ text, class: cssClass, tooltip }) + '\n');
-}
 
 function printWaiting() {
   process.stdout.write(JSON.stringify({
@@ -179,7 +62,8 @@ function handleTypedMessage(data) {
 
 function renderWithCurrentState() {
   if (lastUsageCache) {
-    render(lastUsageCache);
+    const out = render(lastUsageCache, lastUpdateState);
+    process.stdout.write(JSON.stringify(out) + '\n');
   }
 }
 
@@ -205,7 +89,8 @@ function connect() {
         handleTypedMessage(data);
       } else {
         lastUsageCache = data;
-        render(data);
+        const out = render(data, lastUpdateState);
+        process.stdout.write(JSON.stringify(out) + '\n');
       }
     } catch (err) {
       process.stderr.write('[ai-gauge-waybar] parse error: ' + (err?.message || err) + '\n');
