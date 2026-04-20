@@ -114,84 +114,17 @@ cmd_setup_macos() {
     local CONFIG_FILE="$CONFIG_DIR/config.json"
     mkdir -p "$CONFIG_DIR"
     if [[ ! -f "$CONFIG_FILE" ]]; then
-        echo '{"tokenSource": "claude-code", "plan": "unknown"}' > "$CONFIG_FILE"
+        echo '{"tokenSource":"claude-code","plan":"unknown","displayMode":"full","autoCheckUpdates":true}' > "$CONFIG_FILE"
         echo "  Created default config → $CONFIG_FILE"
     else
         echo "  Config already exists (skipped)"
     fi
-
-    # Ensure required directories
-    mkdir -p "$LOG_DIR"
-    mkdir -p "$LAUNCH_AGENTS"
-
-    # Generate server plist from template
-    local SERVER_PLIST="$LAUNCH_AGENTS/com.ai-gauge.server.plist"
-    sed -e "s|__BUN_PATH__|$BUN_PATH|g" \
-        -e "s|__SERVER_PATH__|$SERVER_PATH|g" \
-        -e "s|__LOG_DIR__|$LOG_DIR|g" \
-        -e "s|__HOME__|$HOME|g" \
-        "$LIB_DIR/ai-gauge-server.plist.template" > "$SERVER_PLIST"
-    echo "  Installed $SERVER_PLIST"
-
-    # Generate menubar plist from template
-    local MENUBAR_PLIST="$LAUNCH_AGENTS/com.ai-gauge.menubar.plist"
-    sed -e "s|__MENUBAR_APP_EXEC__|$APP_EXEC|g" \
-        -e "s|__LOG_DIR__|$LOG_DIR|g" \
-        -e "s|__HOME__|$HOME|g" \
-        "$LIB_DIR/ai-gauge-menubar.plist.template" > "$MENUBAR_PLIST"
-    echo "  Installed $MENUBAR_PLIST"
-
-    # Validate plists post-substitution
-    plutil -lint "$SERVER_PLIST"
-    plutil -lint "$MENUBAR_PLIST"
-
-    # Bootstrap LaunchAgents (idempotent: bootout first, then bootstrap).
-    # bootout may return non-zero if agent isn't already loaded — ignore.
-    launchctl bootout "gui/${UID_VAL}/com.ai-gauge.server" 2>/dev/null || true
-    launchctl bootstrap "gui/${UID_VAL}" "$SERVER_PLIST"
-    echo "  Bootstrapped com.ai-gauge.server"
-
-    launchctl bootout "gui/${UID_VAL}/com.ai-gauge.menubar" 2>/dev/null || true
-    launchctl bootstrap "gui/${UID_VAL}" "$MENUBAR_PLIST"
-    echo "  Bootstrapped com.ai-gauge.menubar"
-
-    echo "ai-gauge setup complete (macOS)"
-    echo "Both LaunchAgents registered. Menubar icon should appear shortly."
-}
-
-cmd_setup() {
-    echo "Setting up ai-gauge..."
-
-    if is_macos; then
-        cmd_setup_macos
-        return 0
-    fi
-
-    # Resolve bun path
-    local BUN_PATH
-    BUN_PATH=$(which bun 2>/dev/null || true)
-    if [[ -z "$BUN_PATH" ]]; then
-        echo "Error: bun not found in PATH. Install bun first: https://bun.sh"
-        exit 1
-    fi
-    echo "  Found bun at $BUN_PATH"
-
-    # Resolve ai-gauge-server path (it's in PATH after npm install)
-    local SERVER_PATH
-    SERVER_PATH=$(which ai-gauge-server 2>/dev/null || true)
-    if [[ -z "$SERVER_PATH" ]]; then
-        echo "Error: ai-gauge-server not found in PATH"
-        exit 1
-    fi
-    SERVER_PATH="$(readlink -f "$SERVER_PATH")"
-    echo "  Found ai-gauge-server at $SERVER_PATH"
-
-    # Create default config if missing
-    local CONFIG_DIR="$HOME/.config/ai-gauge"
-    local CONFIG_FILE="$CONFIG_DIR/config.json"
-    mkdir -p "$CONFIG_DIR"
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        echo '{"tokenSource": "claude-code", "plan": "unknown"}' > "$CONFIG_FILE"
+ 
+     local CONFIG_DIR="$HOME/.config/ai-gauge"
+     local CONFIG_FILE="$CONFIG_DIR/config.json"
+     mkdir -p "$CONFIG_DIR"
+     if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo '{"tokenSource":"claude-code","plan":"unknown","displayMode":"full","autoCheckUpdates":true}' > "$CONFIG_FILE"
         echo "  Created default config → $CONFIG_FILE"
     else
         echo "  Config already exists (skipped)"
