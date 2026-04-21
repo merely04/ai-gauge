@@ -119,16 +119,67 @@ cmd_setup_macos() {
     else
         echo "  Config already exists (skipped)"
     fi
- 
-     local CONFIG_DIR="$HOME/.config/ai-gauge"
-     local CONFIG_FILE="$CONFIG_DIR/config.json"
-     mkdir -p "$CONFIG_DIR"
-     if [[ ! -f "$CONFIG_FILE" ]]; then
-        echo '{"tokenSource":"claude-code","plan":"unknown","displayMode":"full","autoCheckUpdates":true}' > "$CONFIG_FILE"
-        echo "  Created default config → $CONFIG_FILE"
-    else
-        echo "  Config already exists (skipped)"
+
+    # Ensure required directories
+    mkdir -p "$LOG_DIR"
+    mkdir -p "$LAUNCH_AGENTS"
+
+    # Generate server plist from template
+    local SERVER_PLIST="$LAUNCH_AGENTS/com.ai-gauge.server.plist"
+    sed -e "s|__BUN_PATH__|$BUN_PATH|g" \
+        -e "s|__SERVER_PATH__|$SERVER_PATH|g" \
+        -e "s|__LOG_DIR__|$LOG_DIR|g" \
+        -e "s|__HOME__|$HOME|g" \
+        "$LIB_DIR/ai-gauge-server.plist.template" > "$SERVER_PLIST"
+    echo "  Installed $SERVER_PLIST"
+
+    # Generate menubar plist from template
+    local MENUBAR_PLIST="$LAUNCH_AGENTS/com.ai-gauge.menubar.plist"
+    sed -e "s|__MENUBAR_APP_EXEC__|$APP_EXEC|g" \
+        -e "s|__LOG_DIR__|$LOG_DIR|g" \
+        -e "s|__HOME__|$HOME|g" \
+        "$LIB_DIR/ai-gauge-menubar.plist.template" > "$MENUBAR_PLIST"
+    echo "  Installed $MENUBAR_PLIST"
+
+    # Validate plists post-substitution
+    plutil -lint "$SERVER_PLIST"
+    plutil -lint "$MENUBAR_PLIST"
+
+    # Bootstrap LaunchAgents (idempotent: bootout first, then bootstrap).
+    # bootout may return non-zero if agent isn't already loaded — ignore.
+    launchctl bootout "gui/${UID_VAL}/com.ai-gauge.server" 2>/dev/null || true
+    launchctl bootstrap "gui/${UID_VAL}" "$SERVER_PLIST"
+    echo "  Bootstrapped com.ai-gauge.server"
+
+    launchctl bootout "gui/${UID_VAL}/com.ai-gauge.menubar" 2>/dev/null || true
+    launchctl bootstrap "gui/${UID_VAL}" "$MENUBAR_PLIST"
+    echo "  Bootstrapped com.ai-gauge.menubar"
+
+    echo "ai-gauge setup complete (macOS)"
+    echo "Both LaunchAgents registered. Menubar icon should appear shortly."
+}
+
+cmd_setup_linux() {
+    local BUN_PATH
+    BUN_PATH=$(command -v bun 2>/dev/null || true)
+    if [[ -z "$BUN_PATH" ]]; then
+        echo "Error: bun not found in PATH. Install bun first: https://bun.sh"
+        exit 1
     fi
+    BUN_PATH=$(resolve_path "$BUN_PATH")
+    echo "  Found bun at $BUN_PATH"
+
+    local SERVER_PATH
+    SERVER_PATH=$(command -v ai-gauge-server 2>/dev/null || true)
+    if [[ -z "$SERVER_PATH" ]]; then
+        SERVER_PATH="$BIN_DIR/ai-gauge-server"
+    fi
+    if [[ ! -f "$SERVER_PATH" ]]; then
+        echo "Error: ai-gauge-server not found (looked in PATH and $BIN_DIR)"
+        exit 1
+    fi
+    SERVER_PATH=$(resolve_path "$SERVER_PATH")
+    echo "  Found ai-gauge-server at $SERVER_PATH"
 
     # Install systemd service
     local SYSTEMD_DIR="$HOME/.config/systemd/user"
@@ -267,10 +318,7 @@ cmd_setup() {
         return $?
     fi
 
-    # Linux setup path — re-implementation needed (was removed in 8f75262)
-    echo "Error: Linux setup is currently not available in this build."
-    echo "       Use macOS or refer to docs/LLM_INSTALL.md for manual setup."
-    exit 1
+    cmd_setup_linux
 }
 
 cmd_uninstall() {
