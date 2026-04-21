@@ -261,6 +261,18 @@ CSS
     echo "Done!"
 }
 
+cmd_setup() {
+    if is_macos; then
+        cmd_setup_macos
+        return $?
+    fi
+
+    # Linux setup path — re-implementation needed (was removed in 8f75262)
+    echo "Error: Linux setup is currently not available in this build."
+    echo "       Use macOS or refer to docs/LLM_INSTALL.md for manual setup."
+    exit 1
+}
+
 cmd_uninstall() {
     echo "Uninstalling ai-gauge..."
 
