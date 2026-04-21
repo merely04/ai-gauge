@@ -7,6 +7,12 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.4] — 2026-04-21
+
+### Fixed
+- Restored `cmd_setup` dispatcher in `bin/ai-gauge` (was removed as a regression in 8f75262 when the `displayMode` default was added). Running `ai-gauge setup` no longer fails with "`cmd_setup: command not found`".
+- Restored the macOS LaunchAgent install block inside `cmd_setup_macos` (plist generation + `launchctl bootstrap` for `com.ai-gauge.server` and `com.ai-gauge.menubar`). The Linux path is now a separate `cmd_setup_linux` function so the two don't interfere.
+
 ## [1.2.3] — 2026-04-20
 
 ### Added

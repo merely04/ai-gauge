@@ -2,32 +2,32 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleIdentifier</key>
-	<string>com.ai-gauge.menubar</string>
-	<key>CFBundleName</key>
-	<string>AI Gauge</string>
 	<key>CFBundleExecutable</key>
 	<string>AIGauge</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.ai-gauge.menubar</string>
+	<key>CFBundleName</key>
+	<string>AI Gauge</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
-	<key>CFBundleVersion</key>
-	<string>1.2.3</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.2.3</string>
+	<string>1.2.4</string>
+	<key>CFBundleVersion</key>
+	<string>1.2.4</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>NSHumanReadableCopyright</key>
-	<string>© 2026 merely04. MIT License.</string>
-	<key>NSUserNotificationAlertStyle</key>
-	<string>banner</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 merely04. MIT License.</string>
+	<key>NSUserNotificationAlertStyle</key>
+	<string>banner</string>
 </dict>
 </plist>
