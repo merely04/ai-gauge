@@ -7,10 +7,7 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
-- Cache invalidation: daemon now drops stale `usage.json` cache when `meta.tokenSource` or `meta.provider` doesn't match current config/credentials. Previously, switching providers or having failed fetches could cause stale data from old test runs or previous provider configurations to be broadcast indefinitely.
-
-## [1.3.1] — 2026-04-21
+## [1.3.0] — 2026-04-21
 
 ### Fixed
 - Z.ai provider: duplicate bucket bug when response contains only `unit=6` TOKENS_LIMIT — previously copied same bucket into both `five_hour` and `seven_day`; now correctly leaves `five_hour` null
@@ -18,6 +15,7 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Log safety: metadata fields (`tokenSource`, `source`, `provider`, `name`) no longer falsely masked as `***`
 - Settings discovery: differentiates `permission-denied` and `not-a-file` from `invalid-json` for better diagnostics
 - OpenCode credential read: non-ENOENT errors now logged (permission issues no longer silently swallowed)
+- Cache invalidation: daemon now drops stale `usage.json` cache when `meta.tokenSource` or `meta.provider` doesn't match current config/credentials. Previously, switching providers or having failed fetches could cause stale data from old test runs or previous provider configurations to be broadcast indefinitely.
 
 ### Changed
 - Provider adapters use shared `httpError()` helper (reduces boilerplate)
@@ -27,10 +25,6 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - JSDoc annotations on all provider adapters for API consistency
 - AGENTS.md documentation for `balance.extras` schema (komilion-specific fields)
-
-## [1.3.0] — 2026-04-21
-
-### Added
 - Multi-provider token sources: `claude-settings:{name}` format for `~/.claude/settings*.json` files
 - Provider adapters: Z.ai, MiniMax, OpenRouter, Komilion (credit-balance), Packy (stub), unknown (fallback)
 - `listSettingsFiles` WebSocket command — on-demand discovery of settings files with provider detection
