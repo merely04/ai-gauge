@@ -1,0 +1,11 @@
+{
+  "model_remains": [{
+    "model_name": "MiniMax-M1",
+    "current_interval_total_count": 100,
+    "current_interval_usage_count": 80,
+    "end_time": 99999999999,
+    "current_weekly_total_count": 1000,
+    "current_weekly_usage_count": 900,
+    "weekly_end_time": 88888888888
+  }]
+}

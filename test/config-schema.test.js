@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { tmpdir } from "os";
 import { join } from "path";
 import { mkdtemp, rm, writeFile } from "fs/promises";
-import { validateConfigChange, applyConfigChange, readConfig, VALID_KEYS, VALID_VALUES } from "../lib/config.js";
+import { validateConfigChange, applyConfigChange, readConfig, VALID_KEYS, VALID_VALUES, TOKEN_SOURCE_PATTERN } from "../lib/config.js";
 
 describe("config schema: displayMode validation", () => {
   test("accepts all 5 valid displayMode values", () => {
@@ -38,6 +38,50 @@ describe("config schema: displayMode validation", () => {
     expect(VALID_VALUES.displayMode).toHaveLength(5);
     expect(VALID_VALUES.displayMode).toContain('full');
     expect(VALID_VALUES.displayMode).toContain('bar-dots');
+  });
+});
+
+describe("config schema: tokenSource pattern validation", () => {
+  test("accepts claude-code", () => {
+    expect(validateConfigChange('tokenSource', 'claude-code').valid).toBe(true);
+  });
+
+  test("accepts opencode", () => {
+    expect(validateConfigChange('tokenSource', 'opencode').valid).toBe(true);
+  });
+
+  test("accepts claude-settings:z", () => {
+    expect(validateConfigChange('tokenSource', 'claude-settings:z').valid).toBe(true);
+  });
+
+  test("accepts claude-settings:default", () => {
+    expect(validateConfigChange('tokenSource', 'claude-settings:default').valid).toBe(true);
+  });
+
+  test("accepts claude-settings:my_profile.v2", () => {
+    expect(validateConfigChange('tokenSource', 'claude-settings:my_profile.v2').valid).toBe(true);
+  });
+
+  test("rejects claude-settings:.. (path traversal)", () => {
+    expect(validateConfigChange('tokenSource', 'claude-settings:..').valid).toBe(false);
+  });
+
+  test("rejects claude-settings: (empty name)", () => {
+    expect(validateConfigChange('tokenSource', 'claude-settings:').valid).toBe(false);
+  });
+
+  test("rejects claude-settings:a/b (slash)", () => {
+    expect(validateConfigChange('tokenSource', 'claude-settings:a/b').valid).toBe(false);
+  });
+
+  test("rejects claude-settings:a b (space)", () => {
+    expect(validateConfigChange('tokenSource', 'claude-settings:a b').valid).toBe(false);
+  });
+
+  test("TOKEN_SOURCE_PATTERN exported and correct", () => {
+    expect(TOKEN_SOURCE_PATTERN).toBeInstanceOf(RegExp);
+    expect(TOKEN_SOURCE_PATTERN.test('claude-settings:nekocode')).toBe(true);
+    expect(TOKEN_SOURCE_PATTERN.test('claude-settings:../etc')).toBe(false);
   });
 });
 
