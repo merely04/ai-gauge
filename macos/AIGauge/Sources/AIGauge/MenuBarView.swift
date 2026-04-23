@@ -21,6 +21,14 @@ struct MenuBarView: View {
     ]
 
     var body: some View {
+        if usageModel.protocolMismatch {
+            Label("AI Gauge update needed for full functionality", systemImage: "exclamationmark.triangle.fill")
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(.orange)
+                .help("Server protocol version exceeds what this app supports. Update AI Gauge.")
+            Divider()
+        }
+
         tooltipSection
 
         Divider()
@@ -73,6 +81,12 @@ struct MenuBarView: View {
         Menu {
             ForEach(sources, id: \.value) { source in
                 sourceButton(value: source.value, display: source.display)
+            }
+            if !usageModel.availableSources.isEmpty {
+                Divider()
+                ForEach(usageModel.availableSources) { source in
+                    discoveredSourceButton(source)
+                }
             }
         } label: {
             Label("Change token source", systemImage: "key.fill")
@@ -206,6 +220,22 @@ struct MenuBarView: View {
                 }
             }
         ))
+    }
+
+    @ViewBuilder
+    private func discoveredSourceButton(_ source: DiscoveredSource) -> some View {
+        let value = "claude-settings:\(source.name)"
+        let label = "\(source.name) (\(source.provider))"
+        Toggle(label, isOn: Binding(
+            get: { usageModel.tokenSource == value },
+            set: { newValue in
+                if newValue && source.supported {
+                    configMutator.setTokenSource(value)
+                }
+            }
+        ))
+        .disabled(!source.supported)
+        .help(source.skipReason ?? "")
     }
 
     @ViewBuilder

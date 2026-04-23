@@ -13,6 +13,10 @@ final class ConfigMutator: ObservableObject {
     }
 
     func setTokenSource(_ source: String) {
+        guard UsageModel.isValidTokenSource(source) else {
+            FileHandle.standardError.write(Data("[config] rejected invalid tokenSource\n".utf8))
+            return
+        }
         webSocketClient?.send("{\"type\":\"setConfig\",\"key\":\"tokenSource\",\"value\":\"\(Self.escape(source))\"}")
     }
 

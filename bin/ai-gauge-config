@@ -129,13 +129,12 @@ if [[ "${1:-}" == "set" ]]; then
             esac
             ;;
         tokenSource)
-            case "$value" in
-                claude-code|opencode) ;;
-                *)
-                    echo "Error: tokenSource must be one of: claude-code, opencode" >&2
-                    exit 1
-                    ;;
-            esac
+            if [[ "$value" =~ ^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$ ]]; then
+                :
+            else
+                echo "Error: tokenSource must match pattern ^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$" >&2
+                exit 1
+            fi
             ;;
         displayMode)
             case "$value" in
@@ -162,7 +161,7 @@ fi
 if is_macos && [[ "${DRY_RUN:-0}" != "1" && -z "${SELECTED_ITEM:-}" ]]; then
     echo "Config UI available via menubar right-click submenu."
     echo "For CLI use: ai-gauge-config set <key> <value>"
-    echo "  Keys: plan (max|pro|team|enterprise|unknown), tokenSource (claude-code|opencode), autoCheckUpdates (true|false), displayMode (full|percent-only|bar-dots|number-bar|time-to-reset)"
+    echo "  Keys: plan (max|pro|team|enterprise|unknown), tokenSource (claude-code|opencode|claude-settings:<name>), autoCheckUpdates (true|false), displayMode (full|percent-only|bar-dots|number-bar|time-to-reset)"
     exit 0
 fi
 
@@ -193,8 +192,13 @@ case "$choice" in
             echo "WOULD_SET: tokenSource"
             exit 0
         fi
-        new_source=$(printf '%s\n' "claude-code" "opencode" \
-            | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 150 -p "Token Source" 2>/dev/null
+        # Build list: fixed OAuth sources + discovered claude-settings:* files
+        settings_list=""
+        if [[ -f "$SCRIPT_DIR/../lib/cli-list-settings.js" ]]; then
+            settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" 2>/dev/null | awk -F'|' '{print "claude-settings:"$1}')
+        fi
+        new_source=$(printf '%s\n' "claude-code" "opencode" ${settings_list:+$settings_list} \
+            | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 250 -p "Token Source" 2>/dev/null
         ) || exit 0
         apply_config tokenSource "$new_source" "Token source: $new_source"
         ;;

@@ -102,6 +102,54 @@ beforeAll(async () => {
             return;
           }
 
+          if (msg.type === "listSettingsFiles") {
+            const files = [
+              { name: "default", provider: "anthropic", baseUrl: null, hasToken: true, supported: true },
+              { name: "zai", provider: "zai", baseUrl: "https://api.z.ai/api/anthropic", hasToken: true, supported: true },
+              { name: "broken", provider: "unknown", baseUrl: null, hasToken: false, supported: false, skipReason: "invalid-json" },
+            ];
+            ws.send(JSON.stringify({ type: "settingsFiles", files }));
+            return;
+          }
+
+          if (msg.type === "broadcastUsageV2") {
+            broadcastToAll({
+              five_hour: { utilization: 44, resets_at: "2099-01-01T00:00:00.000000+00:00" },
+              seven_day: { utilization: 15, resets_at: "2099-01-01T00:00:00.000000+00:00" },
+              balance: null,
+              meta: {
+                plan: "max",
+                tokenSource: "claude-code",
+                displayMode: "full",
+                fetchedAt: "2099-01-01T00:00:00.000Z",
+                version: "0.0.0-test",
+                protocolVersion: 2,
+                autoCheckUpdates: false,
+                provider: "anthropic",
+              },
+            });
+            return;
+          }
+
+          if (msg.type === "broadcastUsageV2Credits") {
+            broadcastToAll({
+              five_hour: null,
+              seven_day: null,
+              balance: { remaining: 12.5, limit: 100, unit: "USD" },
+              meta: {
+                plan: "unknown",
+                tokenSource: "claude-settings:packy",
+                displayMode: "full",
+                fetchedAt: "2099-01-01T00:00:00.000Z",
+                version: "0.0.0-test",
+                protocolVersion: 2,
+                autoCheckUpdates: false,
+                provider: "packy",
+              },
+            });
+            return;
+          }
+
           if (msg.type === "setUsage") {
             // For testing notify threshold crossing
             const oldUsage = serverState.usage;
@@ -399,7 +447,143 @@ describe("WS Protocol", () => {
     });
   });
 
-  it("Test 7: Valid setConfig with tokenSource value accepted", async () => {
+  it("Test 7a: listSettingsFiles returns settingsFiles with expected shape", async () => {
+    const ws = new WebSocket(TEST_URL);
+
+    let received = null;
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "settingsFiles") received = msg;
+    };
+
+    await new Promise((resolve) => {
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: "listSettingsFiles" }));
+
+        setTimeout(() => {
+          expect(received).not.toBeNull();
+          expect(received.type).toBe("settingsFiles");
+          expect(Array.isArray(received.files)).toBe(true);
+          expect(received.files.length).toBeGreaterThan(0);
+
+          for (const file of received.files) {
+            expect(typeof file.name).toBe("string");
+            expect(typeof file.provider).toBe("string");
+            expect("baseUrl" in file).toBe(true);
+            expect(typeof file.hasToken).toBe("boolean");
+            expect(typeof file.supported).toBe("boolean");
+            expect("path" in file).toBe(false);
+          }
+
+          const broken = received.files.find((f) => f.name === "broken");
+          expect(broken).toBeDefined();
+          expect(broken.skipReason).toBe("invalid-json");
+
+          ws.close();
+          resolve();
+        }, 100);
+      };
+    });
+  });
+
+  it("Test 7b: listSettingsFiles response goes only to requesting client", async () => {
+    function openWs() {
+      return new Promise((resolve, reject) => {
+        const ws = new WebSocket(TEST_URL);
+        const timer = setTimeout(() => reject(new Error("open timeout")), 2000);
+        ws.onopen = () => { clearTimeout(timer); resolve(ws); };
+        ws.onerror = (e) => { clearTimeout(timer); reject(e); };
+      });
+    }
+
+    const listener = await openWs();
+    const requester = await openWs();
+
+    let listenerReceivedSettingsFiles = false;
+    let requesterReceivedSettingsFiles = false;
+
+    listener.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "settingsFiles") listenerReceivedSettingsFiles = true;
+    };
+    requester.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "settingsFiles") requesterReceivedSettingsFiles = true;
+    };
+
+    requester.send(JSON.stringify({ type: "listSettingsFiles" }));
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    expect(requesterReceivedSettingsFiles).toBe(true);
+    expect(listenerReceivedSettingsFiles).toBe(false);
+
+    listener.close();
+    requester.close();
+  });
+
+  it("Test 7c: v2 broadcast includes meta.provider, meta.protocolVersion===2, balance key", async () => {
+    const ws = new WebSocket(TEST_URL);
+
+    let broadcastData = null;
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.five_hour !== undefined || msg.balance !== undefined) broadcastData = msg;
+    };
+
+    await new Promise((resolve) => {
+      ws.onopen = () => {
+        const trigger = new WebSocket(TEST_URL);
+        trigger.onopen = () => {
+          trigger.send(JSON.stringify({ type: "broadcastUsageV2" }));
+
+          setTimeout(() => {
+            expect(broadcastData).not.toBeNull();
+            expect(broadcastData.meta).toBeDefined();
+            expect(broadcastData.meta.provider).toBe("anthropic");
+            expect(broadcastData.meta.protocolVersion).toBe(2);
+            expect("balance" in broadcastData).toBe(true);
+            trigger.close();
+            ws.close();
+            resolve();
+          }, 200);
+        };
+      };
+    });
+  });
+
+  it("Test 7d: v2 broadcast with credits data (balance non-null, five_hour null)", async () => {
+    const ws = new WebSocket(TEST_URL);
+
+    let broadcastData = null;
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.balance && msg.balance.remaining !== undefined) broadcastData = msg;
+    };
+
+    await new Promise((resolve) => {
+      ws.onopen = () => {
+        const trigger = new WebSocket(TEST_URL);
+        trigger.onopen = () => {
+          trigger.send(JSON.stringify({ type: "broadcastUsageV2Credits" }));
+
+          setTimeout(() => {
+            expect(broadcastData).not.toBeNull();
+            expect(broadcastData.balance).toBeDefined();
+            expect(broadcastData.balance.remaining).toBe(12.5);
+            expect(broadcastData.five_hour).toBeNull();
+            expect(broadcastData.meta.provider).toBe("packy");
+            expect(broadcastData.meta.protocolVersion).toBe(2);
+            trigger.close();
+            ws.close();
+            resolve();
+          }, 200);
+        };
+      };
+    });
+  });
+
+  it("Test 8: Valid setConfig with tokenSource value accepted", async () => {
     const ws = new WebSocket(TEST_URL);
 
     let received = null;

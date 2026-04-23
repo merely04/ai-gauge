@@ -66,6 +66,39 @@ State/config paths (never relocate without updating every script):
 - Waybar config patched: `~/.config/waybar/config.jsonc` + `~/.config/waybar/style.css`
 - StreamDock install path (Wine): `~/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins/com.ai-gauge.streamdock.sdPlugin`
 
+## Provider Registry
+
+`lib/providers/index.js` exports the provider registry:
+- `getProvider(name)` → ProviderAdapter (throws if unknown)
+- `detectProviderByBaseUrl(url)` → provider name string (`"anthropic"` for null/undefined, `"unknown"` for unrecognized hosts)
+- `registerProvider(adapter)` — called by each provider module on import
+- `PROVIDER_NAMES` — array of 7 supported provider names
+
+### ProviderAdapter Interface
+
+Each adapter exports a default object with:
+
+```js
+{
+  name: string,                          // e.g. "zai"
+  kind: "oauth" | "api-key" | "credit-balance" | "stub",
+  buildRequest(creds, options) → { url, method, headers },
+  parseResponse(json, status) → { rateLimits?, balance?, error? }
+}
+```
+
+Providers: `anthropic` (OAuth), `zai`, `minimax` (api-key), `openrouter`, `komilion` (credit-balance), `packy`, `unknown` (stub).
+
+### Settings Discovery
+
+`lib/settings-discovery.js` exports:
+- `discoverSettingsFiles(claudeDir)` → `Array<PublicSettingsFile>` — for UI/WS. Does NOT include tokens or paths.
+- `readSettingsFileForCreds(claudeDir, name)` → `CredentialBundle | null` — for credential dispatcher.
+
+Security: symlinks rejected, apiKeyHelper never executed, files >1MB rejected, settings.local.json excluded, names validated with `/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/`.
+
+Token source pattern for `claude-settings:` sources: `^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
+
 ## macOS specifics
 
 macOS uses launchd instead of systemd and a native Swift app instead of Waybar.
@@ -117,7 +150,8 @@ Server broadcasts the **raw Anthropic API response** merged with a `meta` field 
   "seven_day_cowork": null,
   "seven_day_omelette": {"utilization": 0, "resets_at": null},
   "extra_usage": {"is_enabled": true, "monthly_limit": 20000, "used_credits": 18752, "utilization": 93.76, "currency": "USD"},
-  "meta": {"plan": "unknown", "tokenSource": "opencode", "displayMode": "full", "fetchedAt": "2026-04-17T20:27:38.885Z", "version": "1.2.0", "protocolVersion": 1, "autoCheckUpdates": true}
+  "balance": {"total_cents": 10000, "used_cents": 3500, "currency": "USD"},
+  "meta": {"plan": "unknown", "tokenSource": "opencode", "provider": "anthropic", "displayMode": "full", "fetchedAt": "2026-04-17T20:27:38.885Z", "version": "1.2.0", "protocolVersion": 2, "autoCheckUpdates": true}
 }
 ```
 
@@ -125,9 +159,12 @@ Field notes:
 - `five_hour.utilization` and `seven_day.utilization` are percentages (0–100+), sometimes non-integer.
 - `resets_at` is ISO-8601 with **microsecond precision and `+00:00` timezone** — Swift's `ISO8601DateFormatter` with `.withFractionalSeconds` only handles milliseconds, so the Swift client has a fallback parser (see `UsageModel.parseISODate`).
 - `extra_usage.monthly_limit` and `used_credits` are in cents; divide by 100 for dollars.
+- `balance` — present only for credit-based providers (OpenRouter, Komilion). `total_cents` and `used_cents` are integers; divide by 100 for dollars. Absent (or `null`) for rate-limit-only providers like Anthropic.
+- `balance.extras` — provider-specific extension fields. For `komilion`: `{trial_credits_cents: number, is_low_balance: boolean}`. Other providers: absent.
 - `meta.plan`, `meta.tokenSource`, and `meta.fetchedAt` are injected by the server from `config.json` / the current state (not upstream Anthropic fields). `tokenSource` is re-broadcast on every poll and immediately after a `setConfig` mutation so clients can reflect the current selection (used by the macOS menubar for checkmarks).
+- `meta.provider` — active provider name as detected by `lib/providers/index.js` (e.g. `"anthropic"`, `"zai"`, `"openrouter"`). Injected by the server; not an upstream field.
 - `meta.version` — the daemon's own ai-gauge version (from `package.json`).
-- `meta.protocolVersion` — currently `1` (for forward compat).
+- `meta.protocolVersion` — currently `2` (bumped from 1 when `balance` and `meta.provider` were added). Additive change; v1 clients that ignore unknown fields are unaffected.
 - `meta.autoCheckUpdates` — current value of the `autoCheckUpdates` config key.
 - `meta.displayMode` — current display mode: `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`. Clients fall back to `full` if absent or unrecognized.
 - Any of the `seven_day_*` windows may be `null`.
@@ -168,6 +205,7 @@ Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, write
 ```
 
 - key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`; `tokenSource` → `claude-code`, `opencode`; `autoCheckUpdates` → `true`, `false`; `displayMode` → `full`, `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
+- `tokenSource` also accepts `claude-settings:{name}` values matching `^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
 - Server **rejects** any value outside the canonical enum (logs warning, config unchanged)
 - Do NOT change the raw-broadcast shape without updating both `bin/ai-gauge-waybar` and `macos/AIGauge/Sources/AIGauge/UsageModel.swift` in the same commit.
 
@@ -237,6 +275,18 @@ Silences `updateAvailable` broadcasts for the given version. `version` is option
 ```
 Clears the dismiss marker and triggers a fresh `checkUpdate` so the notification can return.
 
+#### `listSettingsFiles`
+```json
+{"type":"listSettingsFiles"}
+```
+Requests on-demand discovery of `~/.claude/settings*.json` files. Server responds with:
+```json
+{"type":"settingsFiles","files":[{"name":"myprovider","provider":"zai"},{"name":"work","provider":"anthropic"}]}
+```
+- `name` — the settings file name without the `settings.` prefix and `.json` suffix (e.g. `myprovider` for `settings.myprovider.json`)
+- `provider` — detected provider name from `lib/providers/index.js` based on `ANTHROPIC_BASE_URL` in the file's `env` block
+- Used by the macOS menubar to populate the dynamic "Change token source" submenu
+
 ### Update system env vars
 
 - `NO_UPDATE_NOTIFIER=1` — disable all update checks (also respected by CI auto-detection)
@@ -253,6 +303,13 @@ Clears the dismiss marker and triggers a fresh `checkUpdate` so the notification
 - `AIGAUGE_TEST_UPDATE_AVAILABLE=1` — macOS menubar test hook: injects fake update available state (also set `AIGAUGE_TEST_LATEST_VERSION=x.y.z`)
 - `AIGAUGE_TEST_UPDATE_INSTALLING=1` — macOS menubar test hook: injects installing state
 - `AIGAUGE_TEST_UPDATE_FAILED=<reason>` — macOS menubar test hook: injects failed state
+- `AIGAUGE_MENU_STATE_PATH` — macOS menubar: when set, app writes JSON state snapshot on every update
+- `AIGAUGE_TEST_PROTOCOL_VERSION` — integer, triggers `protocolMismatch` check in Swift app
+- `AIGAUGE_TEST_PROVIDER` — string, synthesizes test broadcast with given provider name
+- `AIGAUGE_TEST_FIVE_HOUR` — integer 0-100, five_hour.utilization for test broadcast
+- `AIGAUGE_TEST_SEVEN_DAY` — integer 0-100, seven_day.utilization for test broadcast
+- `AIGAUGE_TEST_BALANCE_TOTAL_CENTS` — integer, balance.total_cents for test broadcast
+- `AIGAUGE_TEST_BALANCE_USED_CENTS` — integer, balance.used_cents for test broadcast
 
 Note: launch `.app` directly via `bin/AIGauge.app/Contents/MacOS/AIGauge` for env hooks to work (not via `open bin/AIGauge.app`).
 
@@ -357,3 +414,5 @@ The pre-push hook lives at `.githooks/pre-push` and is activated by `git config 
 - **Commit style**: repo has no PR template. Keep commits small and focused. Tests live under `test/` and run via `bun test`. `CHANGELOG.md` is required — every release needs a matching `## [X.Y.Z] — YYYY-MM-DD` section (see Pre-release checklist).
 - **Pre-push hook lives at `.githooks/pre-push`** and is activated by `git config core.hooksPath .githooks`. The hook validates version consistency ONLY when the push includes a `vX.Y.Z` tag — regular branch pushes are untouched. Activated automatically via `package.json` `prepare` script (triggered by `bun install` / `npm install`). Bypass with `git push --no-verify` only if the validator itself is broken.
 - **`.gitignore` ignores `.sisyphus/`, `node_modules/`, `bun.lock*`** — `bun link` creates `node_modules/.bin/` symlinks during local dev, don't commit them.
+- **`lib/ssrf-guard.js`** — SSRF protection on all user-controlled `baseUrl` fetches. Blocks HTTP, private IP ranges (RFC1918, link-local), and IPv6 loopback. Call it before any `fetch()` that uses a URL from config or a settings file.
+- **`lib/log-safe.js`** — secret masking for daemon logs. Use `logJson()` for structured events; never log raw tokens or credential values. The masker redacts anything matching `TOKEN|KEY|SECRET|CREDENTIAL|AUTH|PASSWORD|PASSPHRASE`.

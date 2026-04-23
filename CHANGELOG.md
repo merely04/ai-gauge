@@ -7,6 +7,50 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-04-21
+
+### Fixed
+- Z.ai provider: duplicate bucket bug when response contains only `unit=6` TOKENS_LIMIT — previously copied same bucket into both `five_hour` and `seven_day`; now correctly leaves `five_hour` null
+- SSRF guard: IPv4 encoding bypass — now blocks decimal (`2130706433`), hex (`0x7f000001`), and octal (`0177.0.0.1`) encodings of private IPs
+- Log safety: metadata fields (`tokenSource`, `source`, `provider`, `name`) no longer falsely masked as `***`
+- Settings discovery: differentiates `permission-denied` and `not-a-file` from `invalid-json` for better diagnostics
+- OpenCode credential read: non-ENOENT errors now logged (permission issues no longer silently swallowed)
+- Cache invalidation: daemon now drops stale `usage.json` cache when `meta.tokenSource` or `meta.provider` doesn't match current config/credentials. Previously, switching providers or having failed fetches could cause stale data from old test runs or previous provider configurations to be broadcast indefinitely.
+
+### Changed
+- Provider adapters use shared `httpError()` helper (reduces boilerplate)
+- `fetchUsage()` accepts config parameter (removes redundant disk read per polling cycle)
+- Waybar/menubar: credit-balance providers with known total but unknown used now show "Balance: $X.XX available"
+
+### Added
+- JSDoc annotations on all provider adapters for API consistency
+- AGENTS.md documentation for `balance.extras` schema (komilion-specific fields)
+- Multi-provider token sources: `claude-settings:{name}` format for `~/.claude/settings*.json` files
+- Provider adapters: Z.ai, MiniMax, OpenRouter, Komilion (credit-balance), Packy (stub), unknown (fallback)
+- `listSettingsFiles` WebSocket command — on-demand discovery of settings files with provider detection
+- `balance` field in broadcast for credit-based providers (OpenRouter, Komilion)
+- `meta.provider` field in broadcast indicating active provider
+- `lib/providers/` registry with `ProviderAdapter` interface
+- `lib/settings-discovery.js` — secure discovery of `~/.claude/settings*.json` files
+- `lib/ssrf-guard.js` — pre-fetch SSRF protection for user-controlled base URLs
+- `lib/log-safe.js` — structured secret masking for daemon logs
+- macOS menubar: dynamic source list from `listSettingsFiles` response
+- macOS menubar: provider indicator suffix in menubar text (z.ai → `z`, etc.)
+- macOS menubar: balance line in tooltip for credit-based providers
+- macOS menubar: protocol-version gating banner for future protocol bumps
+
+### Changed
+- WebSocket protocol version bumped to 2 (additive; v1 clients unaffected)
+- `tokenSource` config accepts `claude-settings:{name}` pattern (was binary enum)
+- Log events now use structured JSON via `logJson()` with secret masking
+
+### Security
+- SSRF guard blocks HTTP, private IP ranges (RFC1918, link-local), and IPv6 loopback
+- `apiKeyHelper` field in settings files: never executed, flagged as `supported: false`
+- Symlinks in `~/.claude/` rejected during discovery (TOCTOU prevention)
+- Token values masked in all daemon log output via `lib/log-safe.js`
+- Path traversal blocked in `claude-settings:` tokenSource names
+
 ## [1.2.4] — 2026-04-21
 
 ### Fixed
