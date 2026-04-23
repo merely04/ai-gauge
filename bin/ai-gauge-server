@@ -10,6 +10,7 @@ import { readClaudeCodeCredentials, readOpenCodeCredentials, isTokenValid, CREDS
 import { discoverSettingsFiles, readSettingsFileForCreds } from '../lib/settings-discovery.js';
 import { logJson, sanitizeError } from '../lib/log-safe.js';
 import { buildMeta, PACKAGE_VERSION } from '../lib/meta.js';
+import { loadCachedUsage } from '../lib/cache-loader.js';
 import { getProvider } from '../lib/providers/index.js';
 import { validateProviderUrl } from '../lib/ssrf-guard.js';
 import '../lib/providers/anthropic.js';
@@ -110,30 +111,6 @@ async function writeUsageAtomic(data) {
   await Bun.write(`${STATE_DIR}/last_fetch`, String(Math.floor(Date.now() / 1000)));
 }
 
-async function loadCachedDataFromDisk(fallbackPlan) {
-  try {
-    const config = await readConfig();
-    const plan = config.plan && config.plan !== 'unknown' ? config.plan : fallbackPlan;
-    const data = await Bun.file(`${STATE_DIR}/usage.json`).json();
-    if (data?.five_hour || data?.balance) {
-      cachedData = {
-        ...data,
-        meta: buildMeta(
-          {
-            plan: data?.meta?.plan ?? plan,
-            tokenSource: data?.meta?.tokenSource ?? config.tokenSource,
-            displayMode: data?.meta?.displayMode ?? config.displayMode,
-            autoCheckUpdates: config.autoCheckUpdates,
-          },
-          { fetchedAt: data?.meta?.fetchedAt, provider: data?.meta?.provider }
-        ),
-      };
-      return true;
-    }
-  } catch {}
-  return false;
-}
-
 function formatDuration(resetsAt) {
   if (!resetsAt) return '?';
   const remaining = Math.max(0, (new Date(resetsAt).getTime() - Date.now()) / 1000);
@@ -181,12 +158,14 @@ function doFetch(url, opts) {
   return (_fetchImpl ?? globalThis.fetch)(url, opts);
 }
 
-async function fetchUsage(creds) {
+async function fetchUsage(creds, config) {
   if (!creds || !creds.token) return false;
   if (creds.expiresAt !== null && !isTokenValid(creds.expiresAt)) {
     logJson(console.error, 'token_expired', { source: creds.tokenSource });
     return false;
   }
+
+  const effectiveConfig = config ?? await readConfig();
 
   const providerName = creds.provider ?? 'anthropic';
   const adapter = getProvider(providerName);
@@ -236,12 +215,10 @@ async function fetchUsage(creds) {
       return false;
     }
 
-    const config = await readConfig();
-
     cachedData = {
       ...(parsed.rateLimits ?? {}),
       balance: parsed.balance ?? null,
-      meta: buildMeta(config, {
+      meta: buildMeta(effectiveConfig, {
         subscriptionType: creds.subscriptionType,
         provider: creds.provider,
       }),
@@ -261,7 +238,7 @@ async function fetchAndHandleBroadcast() {
   fetchInFlight = (async () => {
     const config = await readConfig();
     const creds = await readCredentials(config);
-    const success = await fetchUsage(creds);
+    const success = await fetchUsage(creds, config);
     if (success) {
       currentInterval = POLL_INTERVAL;
       broadcast(cachedData);
@@ -333,7 +310,9 @@ async function handleSetConfig(cmd) {
     }
     logError(`[setConfig] applied: ${key}=${value}`);
 
-    if (cachedData) {
+    if (key === 'tokenSource') {
+      cachedData = null;
+    } else if (cachedData) {
       cachedData = {
         ...cachedData,
         meta: {
@@ -474,7 +453,14 @@ async function main() {
   console.error(`token source: ${config.tokenSource}`);
   await detectClaudeVersion();
   const startupCreds = await readCredentials(config);
-  await loadCachedDataFromDisk(startupCreds?.subscriptionType);
+  if (startupCreds) {
+    cachedData = await loadCachedUsage(`${STATE_DIR}/usage.json`, {
+      expectedTokenSource: config.tokenSource,
+      expectedProvider: startupCreds.provider,
+      config,
+      fallbackPlan: startupCreds.subscriptionType,
+    });
+  }
   await fetchAndHandleBroadcast();
   ensurePortAvailable();
   server = createServer();

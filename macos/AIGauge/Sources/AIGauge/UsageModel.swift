@@ -17,6 +17,15 @@ enum Urgency {
 final class UsageModel: ObservableObject {
     static let SUPPORTED_PROTOCOL_VERSION = 2
 
+    /// Keep in sync with `lib/config.js:TOKEN_SOURCE_PATTERN`.
+    nonisolated static let TOKEN_SOURCE_PATTERN = #"^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$"#
+
+    nonisolated static func isValidTokenSource(_ value: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: TOKEN_SOURCE_PATTERN) else { return false }
+        let range = NSRange(value.startIndex..., in: value)
+        return regex.firstMatch(in: value, range: range) != nil
+    }
+
     @Published var percentage: Int = 0
     @Published var text: String = "--"
     @Published var tooltip: String = ""
@@ -143,6 +152,9 @@ final class UsageModel: ObservableObject {
             } else if let usedCents = bal.used_cents {
                 let used = Double(usedCents) / 100.0
                 tooltipStr += String(format: "\nBalance: $%.2f used", used)
+            } else if let totalCents = bal.total_cents {
+                let total = Double(totalCents) / 100.0
+                tooltipStr += String(format: "\nBalance: $%.2f available", total)
             }
         }
 

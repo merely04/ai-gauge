@@ -8,6 +8,7 @@ const happy = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/
 const legacyNoWeekly = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/zai-legacy-no-weekly.json'), 'utf8'));
 const fallback = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/zai-fallback.json'), 'utf8'));
 const malformed = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/zai-malformed.json'), 'utf8'));
+const onlyWeekly = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/zai-only-weekly.json'), 'utf8'));
 
 describe('Z.ai Provider Adapter', () => {
   const adapter = getProvider('zai');
@@ -56,6 +57,12 @@ describe('Z.ai Provider Adapter', () => {
     const result = adapter.parseResponse(fallback, 200);
     expect(result.rateLimits.five_hour.utilization).toBe(20);
     expect(result.rateLimits.seven_day.utilization).toBe(50);
+  });
+
+  it('does not duplicate single unit=6 bucket into five_hour and seven_day', () => {
+    const result = adapter.parseResponse(onlyWeekly, 200);
+    expect(result.rateLimits.seven_day.utilization).toBe(45);
+    expect(result.rateLimits.five_hour).toBeNull();
   });
 
   it('parseResponse clamps malformed percentages and preserves null reset', () => {

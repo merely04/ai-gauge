@@ -160,6 +160,7 @@ Field notes:
 - `resets_at` is ISO-8601 with **microsecond precision and `+00:00` timezone** — Swift's `ISO8601DateFormatter` with `.withFractionalSeconds` only handles milliseconds, so the Swift client has a fallback parser (see `UsageModel.parseISODate`).
 - `extra_usage.monthly_limit` and `used_credits` are in cents; divide by 100 for dollars.
 - `balance` — present only for credit-based providers (OpenRouter, Komilion). `total_cents` and `used_cents` are integers; divide by 100 for dollars. Absent (or `null`) for rate-limit-only providers like Anthropic.
+- `balance.extras` — provider-specific extension fields. For `komilion`: `{trial_credits_cents: number, is_low_balance: boolean}`. Other providers: absent.
 - `meta.plan`, `meta.tokenSource`, and `meta.fetchedAt` are injected by the server from `config.json` / the current state (not upstream Anthropic fields). `tokenSource` is re-broadcast on every poll and immediately after a `setConfig` mutation so clients can reflect the current selection (used by the macOS menubar for checkmarks).
 - `meta.provider` — active provider name as detected by `lib/providers/index.js` (e.g. `"anthropic"`, `"zai"`, `"openrouter"`). Injected by the server; not an upstream field.
 - `meta.version` — the daemon's own ai-gauge version (from `package.json`).

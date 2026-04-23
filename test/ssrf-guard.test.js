@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { validateProviderUrl, isKnownProviderHost } from '../lib/ssrf-guard.js';
+import { validateProviderUrl, isKnownProviderHost, normalizeIPv4 } from '../lib/ssrf-guard.js';
 
 describe('validateProviderUrl', () => {
   it('allows valid HTTPS public URL', () => {
@@ -62,6 +62,32 @@ describe('validateProviderUrl', () => {
 
   it('rejects non-URL string', () => {
     expect(validateProviderUrl('not-a-url').allowed).toBe(false);
+  });
+
+  describe('SSRF: IPv4 encoding bypass', () => {
+    it('blocks decimal-encoded localhost (2130706433)', () => {
+      expect(validateProviderUrl('https://2130706433').allowed).toBe(false);
+    });
+
+    it('blocks hex-encoded localhost (0x7f000001)', () => {
+      expect(validateProviderUrl('https://0x7f000001').allowed).toBe(false);
+    });
+
+    it('blocks octal-encoded localhost (0177.0.0.1)', () => {
+      expect(validateProviderUrl('https://0177.0.0.1').allowed).toBe(false);
+    });
+
+    it('blocks decimal metadata endpoint', () => {
+      expect(validateProviderUrl('https://2852039166').allowed).toBe(false);
+    });
+  });
+});
+
+describe('normalizeIPv4', () => {
+  it('normalizes decimal, hex and octal IPv4 forms', () => {
+    expect(normalizeIPv4('2130706433')).toBe('127.0.0.1');
+    expect(normalizeIPv4('0x7f000001')).toBe('127.0.0.1');
+    expect(normalizeIPv4('0177.0.0.1')).toBe('127.0.0.1');
   });
 });
 

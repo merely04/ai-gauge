@@ -191,6 +191,36 @@ final class UsageModelTests: XCTestCase {
         XCTAssertEqual(UsageModel.providerIndicator("unknown"), "?")
     }
 
+    func testIsValidTokenSourceAcceptsHardcodedSources() {
+        XCTAssertTrue(UsageModel.isValidTokenSource("claude-code"))
+        XCTAssertTrue(UsageModel.isValidTokenSource("opencode"))
+    }
+
+    func testIsValidTokenSourceAcceptsClaudeSettingsWithValidNames() {
+        XCTAssertTrue(UsageModel.isValidTokenSource("claude-settings:myprovider"))
+        XCTAssertTrue(UsageModel.isValidTokenSource("claude-settings:z"))
+        XCTAssertTrue(UsageModel.isValidTokenSource("claude-settings:work_account"))
+        XCTAssertTrue(UsageModel.isValidTokenSource("claude-settings:foo.bar"))
+        XCTAssertTrue(UsageModel.isValidTokenSource("claude-settings:a-b-c"))
+        XCTAssertTrue(UsageModel.isValidTokenSource("claude-settings:_leading_underscore"))
+        XCTAssertTrue(UsageModel.isValidTokenSource("claude-settings:0"))
+    }
+
+    func testIsValidTokenSourceRejectsMalformedValues() {
+        XCTAssertFalse(UsageModel.isValidTokenSource(""))
+        XCTAssertFalse(UsageModel.isValidTokenSource("bogus"))
+        XCTAssertFalse(UsageModel.isValidTokenSource("claude-code-extra"))
+        XCTAssertFalse(UsageModel.isValidTokenSource("claude-settings:"))
+        XCTAssertFalse(UsageModel.isValidTokenSource("claude-settings:.dotfile"))
+        XCTAssertFalse(UsageModel.isValidTokenSource("claude-settings:-dash"))
+        XCTAssertFalse(UsageModel.isValidTokenSource("claude-settings:has space"))
+        XCTAssertFalse(UsageModel.isValidTokenSource("claude-settings:has/slash"))
+        XCTAssertFalse(UsageModel.isValidTokenSource("claude-settings:has\npewline"))
+        XCTAssertFalse(UsageModel.isValidTokenSource("CLAUDE-CODE"))
+        XCTAssertFalse(UsageModel.isValidTokenSource(" claude-code"))
+        XCTAssertFalse(UsageModel.isValidTokenSource("claude-code "))
+    }
+
     func testProviderSnapshotIncludesProviderField() throws {
         let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("aigauge-test-\(UUID().uuidString).json")

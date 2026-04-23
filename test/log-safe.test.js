@@ -48,6 +48,22 @@ describe('redact', () => {
     expect(result.url).toBe('https://api.z.ai');
   });
 
+  it('does NOT mask tokenSource (metadata field whitelist)', () => {
+    const result = redact({ tokenSource: 'claude-code', token: 'SECRET' });
+    expect(result.tokenSource).toBe('claude-code');
+    expect(result.token).toBe('***');
+  });
+
+  it('does NOT mask source field (e.g. "claude-settings:z")', () => {
+    const result = redact({ source: 'claude-settings:z', password: 'hidden' });
+    expect(result.source).toBe('claude-settings:z');
+    expect(result.password).toBe('***');
+  });
+
+  it('does NOT mask provider field', () => {
+    expect(redact({ provider: 'zai' }).provider).toBe('zai');
+  });
+
   it('handles nested objects', () => {
     const result = redact({ meta: { token: 'secret', plan: 'pro' } });
     expect(result.meta.token).toBe('***');

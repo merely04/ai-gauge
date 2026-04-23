@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'bun:test';
-import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { discoverSettingsFiles, readSettingsFileForCreds } from '../lib/settings-discovery.js';
 
@@ -15,6 +15,8 @@ afterEach(() => {
   if (!tempDir) return;
 
   try {
+    chmodSync(tempDir, 0o755);
+    chmodSync(join(tempDir, '.claude'), 0o755);
     rmSync(tempDir, { recursive: true, force: true });
   } catch {
     // Ignore cleanup failures.
@@ -134,6 +136,44 @@ describe('discoverSettingsFiles', () => {
       supported: false,
       skipReason: 'invalid-json',
     });
+  });
+
+  it('flags directories as not-a-file', () => {
+    const dir = setup('dir-as-file');
+
+    mkdirSync(join(dir, 'settings.dir.json'));
+
+    expect(discoverSettingsFiles(dir)).toContainEqual({
+      name: 'dir',
+      provider: 'unknown',
+      baseUrl: null,
+      hasToken: false,
+      hasApiKeyHelper: false,
+      supported: false,
+      skipReason: 'not-a-file',
+    });
+  });
+
+  it('flags unreadable files as permission-denied', () => {
+    const dir = setup('permission-denied');
+    const file = join(dir, 'settings.locked.json');
+
+    writeFileSync(file, JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'LOCKED' } }));
+    chmodSync(file, 0o000);
+
+    try {
+      expect(discoverSettingsFiles(dir)).toContainEqual({
+        name: 'locked',
+        provider: 'unknown',
+        baseUrl: null,
+        hasToken: false,
+        hasApiKeyHelper: false,
+        supported: false,
+        skipReason: 'permission-denied',
+      });
+    } finally {
+      chmodSync(file, 0o644);
+    }
   });
 
   it('flags files without token as no-token', () => {
