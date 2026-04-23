@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { readClaudeCodeCredentials, readOpenCodeCredentials } from '../lib/credentials.js';
 
 // Helper to create temp directory for test fixtures
 function createTempDir() {
@@ -12,40 +13,6 @@ function createTempDir() {
 // Helper to create nested directories
 function ensureDir(path) {
   mkdirSync(path, { recursive: true });
-}
-
-// Replicate credential reading logic with configurable paths
-async function readClaudeCodeCredentials(credsFile) {
-  try {
-    const data = await Bun.file(credsFile).json();
-    const oauth = data?.claudeAiOauth;
-    if (!oauth?.accessToken) return null;
-    return {
-      token: oauth.accessToken,
-      expiresAt: oauth.expiresAt,
-      subscriptionType: oauth.subscriptionType,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function readOpenCodeCredentials(primaryPath, macPath) {
-  for (const path of [primaryPath, macPath]) {
-    try {
-      const data = await Bun.file(path).json();
-      const auth = data?.anthropic;
-      if (!auth?.access) continue;
-      return {
-        token: auth.access,
-        expiresAt: auth.expires ?? Infinity,
-        subscriptionType: 'unknown',
-      };
-    } catch {
-      continue;
-    }
-  }
-  return null;
 }
 
 describe('Credential Reading', () => {

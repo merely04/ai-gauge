@@ -6,19 +6,14 @@ import { addClient, removeClient, broadcast, sendToClient } from '../lib/broadca
 import { createThresholdNotifier } from '../lib/threshold-notify.js';
 import { createUpdateLifecycle } from '../lib/update-lifecycle.js';
 import { atomicWriteJSON } from '../lib/atomic-write.js';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readClaudeCodeCredentials, readOpenCodeCredentials, isTokenValid, CREDS_FILE, OPENCODE_AUTH_FILE_PRIMARY, OPENCODE_AUTH_FILE_MAC } from '../lib/credentials.js';
+import { buildMeta, PACKAGE_VERSION } from '../lib/meta.js';
 
-const CREDS_FILE = `${process.env.HOME}/.claude/.credentials.json`;
-const OPENCODE_AUTH_FILE_PRIMARY = `${process.env.HOME}/.local/share/opencode/auth.json`;
-const OPENCODE_AUTH_FILE_MAC = `${process.env.HOME}/Library/Application Support/opencode/auth.json`;
 const STATE_DIR = `${process.platform === 'darwin' ? (process.env.TMPDIR || '/tmp') : (process.env.XDG_RUNTIME_DIR || '/tmp')}/ai-gauge`;
 const WS_PORT = Number(Bun.env.AIGAUGE_WS_PORT) || 19876;
 const POLL_INTERVAL = 60_000;
 const BACKOFF_INTERVAL = 300_000;
 const API_URL = 'https://api.anthropic.com/api/oauth/usage';
-const PROTOCOL_VERSION = 1;
-const PACKAGE_VERSION = JSON.parse(readFileSync(join(import.meta.dir, '..', 'package.json'), 'utf8')).version;
 
 const UPDATE_CHECK_INTERVAL_MS = Number(Bun.env.AIGAUGE_UPDATE_CHECK_INTERVAL_MS) || (24 * 60 * 60 * 1000);
 const UPDATE_CHECK_INITIAL_DELAY_MS = Number(Bun.env.AIGAUGE_UPDATE_CHECK_INITIAL_DELAY_MS) || (30 * 1000);
@@ -34,46 +29,6 @@ let fetchInFlight = null;
 
 function logError(message) {
   console.error(message);
-}
-
-function isTokenValid(expiresAt) {
-  return typeof expiresAt === 'number' && expiresAt > Date.now();
-}
-
-async function readClaudeCodeCredentials() {
-  try {
-    const data = await Bun.file(CREDS_FILE).json();
-    const oauth = data?.claudeAiOauth;
-    if (!oauth?.accessToken) return null;
-    return {
-      token: oauth.accessToken,
-      expiresAt: oauth.expiresAt,
-      subscriptionType: oauth.subscriptionType,
-    };
-  } catch {
-    logError('no claude-code credentials');
-    return null;
-  }
-}
-
-async function readOpenCodeCredentials() {
-  for (const path of [OPENCODE_AUTH_FILE_PRIMARY, OPENCODE_AUTH_FILE_MAC]) {
-    try {
-      const data = await Bun.file(path).json();
-      const auth = data?.anthropic;
-      if (!auth?.access) continue;
-      return {
-        token: auth.access,
-        expiresAt: auth.expires ?? Infinity,
-        subscriptionType: 'unknown',
-      };
-    } catch {
-      continue;
-    }
-  }
-
-  logError('no opencode credentials');
-  return null;
 }
 
 async function readCredentials() {
@@ -116,15 +71,15 @@ async function loadCachedDataFromDisk(fallbackPlan) {
     if (data?.five_hour) {
       cachedData = {
         ...data,
-        meta: {
-          plan: data?.meta?.plan ?? plan ?? 'unknown',
-          fetchedAt: data?.meta?.fetchedAt ?? new Date().toISOString(),
-          tokenSource: data?.meta?.tokenSource ?? config.tokenSource,
-          version: PACKAGE_VERSION,
-          protocolVersion: PROTOCOL_VERSION,
-          autoCheckUpdates: config.autoCheckUpdates ?? true,
-          displayMode: data?.meta?.displayMode ?? config.displayMode ?? 'full',
-        },
+        meta: buildMeta(
+          {
+            plan: data?.meta?.plan ?? plan,
+            tokenSource: data?.meta?.tokenSource ?? config.tokenSource,
+            displayMode: data?.meta?.displayMode ?? config.displayMode,
+            autoCheckUpdates: config.autoCheckUpdates,
+          },
+          { fetchedAt: data?.meta?.fetchedAt }
+        ),
       };
       return true;
     }
@@ -193,18 +148,9 @@ async function fetchUsage() {
     if (!data?.five_hour) return false;
 
     const config = await readConfig();
-    const plan = config.plan && config.plan !== 'unknown' ? config.plan : creds.subscriptionType;
     cachedData = {
       ...data,
-      meta: {
-        plan: plan ?? 'unknown',
-        fetchedAt: new Date().toISOString(),
-        tokenSource: config.tokenSource,
-        version: PACKAGE_VERSION,
-        protocolVersion: PROTOCOL_VERSION,
-        autoCheckUpdates: config.autoCheckUpdates ?? true,
-        displayMode: config.displayMode ?? 'full',
-      },
+      meta: buildMeta(config, { subscriptionType: creds?.subscriptionType }),
     };
 
     await writeUsageAtomic(cachedData);
