@@ -11,8 +11,9 @@ describe("meta builder", () => {
       displayMode: "full",
       fetchedAt: "2026-01-01T00:00:00.000Z",
       version: expect.any(String),
-      protocolVersion: 1,
+      protocolVersion: 2,
       autoCheckUpdates: true,
+      provider: "anthropic",
     });
   });
 
@@ -26,17 +27,32 @@ describe("meta builder", () => {
     expect(meta.plan).toBe("pro");
   });
 
-  test("protocolVersion stays at 1", () => {
+  test("protocolVersion is 2", () => {
     const meta = buildMeta({ tokenSource: "claude-code" }, { fetchedAt: "2026-01-01T00:00:00.000Z" });
-    expect(meta.protocolVersion).toBe(1);
-    expect(meta.protocolVersion).not.toBe(2);
-    expect(META_PROTOCOL_VERSION).toBe(1);
+    expect(meta.protocolVersion).toBe(2);
+    expect(meta.protocolVersion).not.toBe(1);
+    expect(META_PROTOCOL_VERSION).toBe(2);
   });
 
-  test("returns no provider field", () => {
+  test("provider defaults to 'anthropic' when not supplied", () => {
     const meta = buildMeta({ tokenSource: "claude-code" }, { fetchedAt: "2026-01-01T00:00:00.000Z" });
-    expect(Object.prototype.hasOwnProperty.call(meta, "provider")).toBe(false);
-    expect(meta.provider).toBeUndefined();
+    expect(meta.provider).toBe("anthropic");
+  });
+
+  test("custom provider passes through", () => {
+    const meta = buildMeta(
+      { tokenSource: "claude-settings:packy" },
+      { fetchedAt: "2026-01-01T00:00:00.000Z", provider: "packy" },
+    );
+    expect(meta.provider).toBe("packy");
+  });
+
+  test("provider=null falls back to 'anthropic'", () => {
+    const meta = buildMeta(
+      { tokenSource: "claude-code" },
+      { fetchedAt: "2026-01-01T00:00:00.000Z", provider: null },
+    );
+    expect(meta.provider).toBe("anthropic");
   });
 
   test("defaults autoCheckUpdates and displayMode", () => {

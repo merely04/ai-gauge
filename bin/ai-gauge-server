@@ -7,13 +7,24 @@ import { createThresholdNotifier } from '../lib/threshold-notify.js';
 import { createUpdateLifecycle } from '../lib/update-lifecycle.js';
 import { atomicWriteJSON } from '../lib/atomic-write.js';
 import { readClaudeCodeCredentials, readOpenCodeCredentials, isTokenValid, CREDS_FILE, OPENCODE_AUTH_FILE_PRIMARY, OPENCODE_AUTH_FILE_MAC } from '../lib/credentials.js';
+import { discoverSettingsFiles, readSettingsFileForCreds } from '../lib/settings-discovery.js';
+import { logJson, sanitizeError } from '../lib/log-safe.js';
 import { buildMeta, PACKAGE_VERSION } from '../lib/meta.js';
+import { getProvider } from '../lib/providers/index.js';
+import { validateProviderUrl } from '../lib/ssrf-guard.js';
+import '../lib/providers/anthropic.js';
+import '../lib/providers/zai.js';
+import '../lib/providers/minimax.js';
+import '../lib/providers/openrouter.js';
+import '../lib/providers/komilion.js';
+import '../lib/providers/packy.js';
+import '../lib/providers/unknown.js';
 
 const STATE_DIR = `${process.platform === 'darwin' ? (process.env.TMPDIR || '/tmp') : (process.env.XDG_RUNTIME_DIR || '/tmp')}/ai-gauge`;
+const CLAUDE_DIR = `${process.env.HOME}/.claude`;
 const WS_PORT = Number(Bun.env.AIGAUGE_WS_PORT) || 19876;
 const POLL_INTERVAL = 60_000;
 const BACKOFF_INTERVAL = 300_000;
-const API_URL = 'https://api.anthropic.com/api/oauth/usage';
 
 const UPDATE_CHECK_INTERVAL_MS = Number(Bun.env.AIGAUGE_UPDATE_CHECK_INTERVAL_MS) || (24 * 60 * 60 * 1000);
 const UPDATE_CHECK_INITIAL_DELAY_MS = Number(Bun.env.AIGAUGE_UPDATE_CHECK_INITIAL_DELAY_MS) || (30 * 1000);
@@ -26,19 +37,55 @@ let cachedData = null;
 let currentInterval = POLL_INTERVAL;
 let server;
 let fetchInFlight = null;
+let _fetchImpl = null;
 
 function logError(message) {
   console.error(message);
 }
 
-async function readCredentials() {
-  const config = await readConfig();
+async function readCredentials(config) {
+  const src = config.tokenSource;
 
-  if (config.tokenSource === 'opencode') {
-    return readOpenCodeCredentials();
+  if (src === 'claude-code') {
+    const c = await readClaudeCodeCredentials();
+    if (c) {
+      logJson(console.error, 'credentials_loaded', { source: 'claude-code', provider: 'anthropic' });
+      return { ...c, tokenSource: src, provider: 'anthropic', baseUrl: null };
+    }
+    logJson(console.error, 'credentials_missing', { source: 'claude-code' });
+    return null;
   }
 
-  return readClaudeCodeCredentials();
+  if (src === 'opencode') {
+    const c = await readOpenCodeCredentials();
+    if (c) {
+      logJson(console.error, 'credentials_loaded', { source: 'opencode', provider: 'anthropic' });
+      return { ...c, tokenSource: src, provider: 'anthropic', baseUrl: null };
+    }
+    logJson(console.error, 'credentials_missing', { source: 'opencode' });
+    return null;
+  }
+
+  if (src.startsWith('claude-settings:')) {
+    const name = src.slice('claude-settings:'.length);
+    const bundle = readSettingsFileForCreds(CLAUDE_DIR, name);
+    if (!bundle) {
+      logJson(console.warn, 'settings_unreadable', { name, tokenSource: src });
+      return null;
+    }
+    logJson(console.error, 'credentials_loaded', { source: src, provider: bundle.provider });
+    return {
+      token: bundle.token,
+      expiresAt: null,
+      subscriptionType: 'unknown',
+      tokenSource: src,
+      baseUrl: bundle.baseUrl,
+      provider: bundle.provider,
+    };
+  }
+
+  logJson(console.warn, 'credentials_unknown_source', { source: src });
+  return null;
 }
 
 async function detectClaudeVersion() {
@@ -58,7 +105,7 @@ async function detectClaudeVersion() {
 
 async function writeUsageAtomic(data) {
   await atomicWriteJSON(`${STATE_DIR}/usage.json`, data, {
-    validate: (parsed) => !!parsed?.five_hour,
+    validate: (parsed) => !!(parsed?.five_hour || parsed?.balance),
   });
   await Bun.write(`${STATE_DIR}/last_fetch`, String(Math.floor(Date.now() / 1000)));
 }
@@ -68,7 +115,7 @@ async function loadCachedDataFromDisk(fallbackPlan) {
     const config = await readConfig();
     const plan = config.plan && config.plan !== 'unknown' ? config.plan : fallbackPlan;
     const data = await Bun.file(`${STATE_DIR}/usage.json`).json();
-    if (data?.five_hour) {
+    if (data?.five_hour || data?.balance) {
       cachedData = {
         ...data,
         meta: buildMeta(
@@ -78,7 +125,7 @@ async function loadCachedDataFromDisk(fallbackPlan) {
             displayMode: data?.meta?.displayMode ?? config.displayMode,
             autoCheckUpdates: config.autoCheckUpdates,
           },
-          { fetchedAt: data?.meta?.fetchedAt }
+          { fetchedAt: data?.meta?.fetchedAt, provider: data?.meta?.provider }
         ),
       };
       return true;
@@ -126,37 +173,84 @@ const updateLifecycle = createUpdateLifecycle({
   logger: logError,
 });
 
-async function fetchUsage() {
-  const creds = await readCredentials();
+export function setFetchImpl(fn) {
+  _fetchImpl = fn;
+}
+
+function doFetch(url, opts) {
+  return (_fetchImpl ?? globalThis.fetch)(url, opts);
+}
+
+async function fetchUsage(creds) {
   if (!creds || !creds.token) return false;
-  if (!isTokenValid(creds.expiresAt)) {
-    logError('token expired, skipping fetch');
+  if (creds.expiresAt !== null && !isTokenValid(creds.expiresAt)) {
+    logJson(console.error, 'token_expired', { source: creds.tokenSource });
+    return false;
+  }
+
+  const providerName = creds.provider ?? 'anthropic';
+  const adapter = getProvider(providerName);
+
+  if (creds.baseUrl) {
+    const ssrf = validateProviderUrl(creds.baseUrl);
+    if (!ssrf.allowed) {
+      logJson(console.warn, 'ssrf_blocked', { reason: ssrf.reason, provider: providerName });
+      return false;
+    }
+  }
+
+  if (adapter.kind === 'stub') {
+    logJson(console.warn, 'provider_stub_no_api', { provider: providerName });
     return false;
   }
 
   try {
-    const res = await fetch(API_URL, {
+    const req = adapter.buildRequest(
+      { token: creds.token, claudeVersion },
+      { baseUrl: creds.baseUrl }
+    );
+
+    const res = await doFetch(req.url, {
+      method: req.method ?? 'GET',
+      headers: req.headers,
+      redirect: 'manual',
       signal: AbortSignal.timeout(10_000),
-      headers: {
-        Authorization: `Bearer ${creds.token}`,
-        'anthropic-beta': 'oauth-2025-04-20',
-        'User-Agent': `claude-code/${claudeVersion}`,
-      },
     });
 
-    const data = await res.json();
-    if (!data?.five_hour) return false;
+    if (res.status >= 300 && res.status < 400) {
+      logJson(console.warn, 'fetch_redirect_rejected', { status: res.status, provider: providerName });
+      return false;
+    }
+
+    let json = null;
+    try {
+      json = await res.json();
+    } catch {}
+
+    const parsed = adapter.parseResponse(json, res.status);
+    if (parsed.error) {
+      logJson(console.warn, 'provider_error', {
+        provider: providerName,
+        ...sanitizeError(new Error(parsed.error.reason ?? 'unknown')),
+      });
+      return false;
+    }
 
     const config = await readConfig();
+
     cachedData = {
-      ...data,
-      meta: buildMeta(config, { subscriptionType: creds?.subscriptionType }),
+      ...(parsed.rateLimits ?? {}),
+      balance: parsed.balance ?? null,
+      meta: buildMeta(config, {
+        subscriptionType: creds.subscriptionType,
+        provider: creds.provider,
+      }),
     };
 
     await writeUsageAtomic(cachedData);
     return true;
   } catch (err) {
-    logError(`fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+    logJson(console.warn, 'fetch_error', { provider: providerName, ...sanitizeError(err) });
     return false;
   }
 }
@@ -165,13 +259,16 @@ async function fetchAndHandleBroadcast() {
   if (fetchInFlight) return fetchInFlight;
 
   fetchInFlight = (async () => {
-    const success = await fetchUsage();
+    const config = await readConfig();
+    const creds = await readCredentials(config);
+    const success = await fetchUsage(creds);
     if (success) {
       currentInterval = POLL_INTERVAL;
       broadcast(cachedData);
       await thresholdNotifier.check(cachedData);
     } else {
       currentInterval = BACKOFF_INTERVAL;
+      if (cachedData) broadcast(cachedData);
     }
     return success;
   })();
@@ -281,7 +378,7 @@ function createServer() {
           const updatePayload = updateLifecycle.buildAvailablePayload();
           if (updatePayload) sendToClient(ws, updatePayload);
         },
-        async message(_ws, msg) {
+        async message(ws, msg) {
           let cmd;
           try {
             cmd = JSON.parse(typeof msg === 'string' ? msg : Buffer.from(msg).toString('utf8'));
@@ -291,6 +388,19 @@ function createServer() {
 
           if (cmd?.type === 'refresh') {
             void refreshNow();
+            return;
+          }
+
+          if (cmd?.type === 'listSettingsFiles') {
+            const files = discoverSettingsFiles(CLAUDE_DIR).map((f) => ({
+              name: f.name,
+              provider: f.provider,
+              baseUrl: f.baseUrl,
+              hasToken: f.hasToken,
+              supported: f.supported,
+              ...(f.skipReason ? { skipReason: f.skipReason } : {}),
+            }));
+            sendToClient(ws, { type: 'settingsFiles', files });
             return;
           }
 
@@ -363,7 +473,7 @@ async function main() {
   const config = await readConfig();
   console.error(`token source: ${config.tokenSource}`);
   await detectClaudeVersion();
-  const startupCreds = await readCredentials();
+  const startupCreds = await readCredentials(config);
   await loadCachedDataFromDisk(startupCreds?.subscriptionType);
   await fetchAndHandleBroadcast();
   ensurePortAvailable();
@@ -380,4 +490,8 @@ async function main() {
   await pollLoop();
 }
 
-await main();
+if (import.meta.main) {
+  await main();
+}
+
+export { fetchUsage, readCredentials };
