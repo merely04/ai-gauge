@@ -53,6 +53,14 @@ struct AIGaugeApp: App {
         }
         ws.onUpdateCheckFailed = { _ in }
         ws.onUpdateAlreadyInProgress = { }
+        ws.onSettingsFiles = { [weak usage] sources in
+            Task { @MainActor in
+                usage?.updateSources(sources)
+            }
+        }
+        ws.onConnect = { [weak ws] in
+            ws?.requestSettingsFiles()
+        }
 
         _wsClient = StateObject(wrappedValue: ws)
         _usageModel = StateObject(wrappedValue: usage)
@@ -61,17 +69,21 @@ struct AIGaugeApp: App {
 
         Self.applyTestEnvHooks(usage: usage)
 
-        ws.connect()
+        if !Self.isSyntheticStateMode() {
+            ws.connect()
+        }
         notif.requestAuthorization()
+    }
+
+    private static func isSyntheticStateMode() -> Bool {
+        let env = ProcessInfo.processInfo.environment
+        let protocolSet = env["AIGAUGE_TEST_PROTOCOL_VERSION"].map { !$0.isEmpty } ?? false
+        let providerSet = env["AIGAUGE_TEST_PROVIDER"].map { !$0.isEmpty } ?? false
+        return protocolSet || providerSet
     }
 
     private static func applyTestEnvHooks(usage: UsageModel) {
         let env = ProcessInfo.processInfo.environment
-        guard env["AIGAUGE_TEST_UPDATE_AVAILABLE"] == "1"
-                || env["AIGAUGE_TEST_UPDATE_INSTALLING"] == "1"
-                || (env["AIGAUGE_TEST_UPDATE_FAILED"].map { !$0.isEmpty } ?? false) else {
-            return
-        }
 
         Task { @MainActor in
             if env["AIGAUGE_TEST_UPDATE_AVAILABLE"] == "1" {
@@ -96,6 +108,18 @@ struct AIGaugeApp: App {
                     clipboardCopied: nil
                 )
                 usage.handleUpdateFailed(payload)
+            }
+            if let pvStr = env["AIGAUGE_TEST_PROTOCOL_VERSION"], let pv = Int(pvStr) {
+                usage.applyTestProtocolVersion(pv)
+            }
+            if let providerStr = env["AIGAUGE_TEST_PROVIDER"], !providerStr.isEmpty {
+                usage.applyTestProvider(
+                    providerStr,
+                    fiveHour: env["AIGAUGE_TEST_FIVE_HOUR"].flatMap(Int.init),
+                    sevenDay: env["AIGAUGE_TEST_SEVEN_DAY"].flatMap(Int.init),
+                    balanceTotalCents: env["AIGAUGE_TEST_BALANCE_TOTAL_CENTS"].flatMap(Int.init),
+                    balanceUsedCents: env["AIGAUGE_TEST_BALANCE_USED_CENTS"].flatMap(Int.init)
+                )
             }
         }
     }

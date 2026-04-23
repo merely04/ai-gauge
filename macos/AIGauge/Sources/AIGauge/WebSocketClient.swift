@@ -16,6 +16,14 @@ struct UsagePayload: Codable {
         let monthly_limit: Double?
     }
 
+    struct Balance: Codable {
+        let currency: String?
+        let total_cents: Int?
+        let used_cents: Int?
+        let remaining_cents: Int?
+        let percentage: Double?
+    }
+
     struct Meta: Codable {
         let plan: String?
         let fetchedAt: String?
@@ -24,12 +32,14 @@ struct UsagePayload: Codable {
         let protocolVersion: Int?
         let autoCheckUpdates: Bool?
         let displayMode: String?
+        let provider: String?
     }
 
     let five_hour: Window?
     let seven_day: Window?
     let seven_day_sonnet: Window?
     let extra_usage: ExtraUsage?
+    let balance: Balance?
     let meta: Meta?
 }
 
@@ -38,6 +48,21 @@ struct NotifyPayload: Codable {
     let threshold: Int
     let percentage: Int
     let message: String
+}
+
+struct DiscoveredSource: Codable, Identifiable, Equatable {
+    var id: String { name }
+    let name: String
+    let provider: String
+    let baseUrl: String?
+    let hasToken: Bool
+    let supported: Bool
+    let skipReason: String?
+}
+
+struct SettingsFilesPayload: Decodable {
+    let type: String
+    let files: [DiscoveredSource]
 }
 
 final class WebSocketClient: ObservableObject, @unchecked Sendable {
@@ -52,6 +77,8 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
     var onUpdateComplete: ((UpdateCompletePayload) -> Void)?
     var onUpdateCheckFailed: ((UpdateCheckFailedPayload) -> Void)?
     var onUpdateAlreadyInProgress: (() -> Void)?
+    var onSettingsFiles: (([DiscoveredSource]) -> Void)?
+    var onConnect: (() -> Void)?
 
     private let session: URLSession
     private let decoder = JSONDecoder()
@@ -102,6 +129,7 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
             if !self.connected {
                 DispatchQueue.main.async { self.connected = true }
                 self.log("[ws] connected\n")
+                DispatchQueue.main.async { self.onConnect?() }
             }
 
             switch message {
@@ -162,6 +190,11 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
             case "updateAlreadyInProgress":
                 DispatchQueue.main.async { self.onUpdateAlreadyInProgress?() }
                 return
+            case "settingsFiles":
+                if let payload = try? decoder.decode(SettingsFilesPayload.self, from: data) {
+                    DispatchQueue.main.async { self.onSettingsFiles?(payload.files) }
+                    return
+                }
             case "notify":
                 break
             default:
@@ -192,6 +225,10 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
 
     func sendDoUpdate() {
         send("{\"type\":\"doUpdate\"}")
+    }
+
+    func requestSettingsFiles() {
+        send("{\"type\":\"listSettingsFiles\"}")
     }
 
     private func reconnectWithBackoff() {

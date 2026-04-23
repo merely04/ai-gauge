@@ -15,6 +15,8 @@ enum Urgency {
 
 @MainActor
 final class UsageModel: ObservableObject {
+    static let SUPPORTED_PROTOCOL_VERSION = 2
+
     @Published var percentage: Int = 0
     @Published var text: String = "--"
     @Published var tooltip: String = ""
@@ -22,6 +24,7 @@ final class UsageModel: ObservableObject {
     @Published var plan: String = ""
     @Published var tokenSource: String = ""
     @Published var displayMode: String = "full"
+    @Published var provider: String = ""
 
     @Published var updateAvailable: Bool = false
     @Published var latestVersion: String? = nil
@@ -32,6 +35,9 @@ final class UsageModel: ObservableObject {
     @Published var daemonVersion: String? = nil
     @Published var protocolVersion: Int? = nil
     @Published var autoCheckUpdatesEnabled: Bool = true
+    @Published var protocolMismatch: Bool = false
+
+    @Published var availableSources: [DiscoveredSource] = []
 
     var _previousDaemonVersion: String? = nil
 
@@ -49,6 +55,16 @@ final class UsageModel: ObservableObject {
     /// Replicates `render()` from `bin/ai-gauge-waybar` — transforms the raw
     /// Anthropic API broadcast into display-ready text/tooltip/urgency.
     func update(from payload: UsagePayload, now: Date = Date()) {
+        if let pv = payload.meta?.protocolVersion {
+            self.protocolMismatch = pv > Self.SUPPORTED_PROTOCOL_VERSION
+        } else {
+            self.protocolMismatch = false
+        }
+
+        self.provider = payload.meta?.provider ?? ""
+        let indicator = Self.providerIndicator(provider)
+        let isBalanceOnly = payload.five_hour?.utilization == nil
+
         let fivePct = payload.five_hour?.utilization ?? 0
         let sevenPct = payload.seven_day?.utilization ?? 0
         let fiveInt = Int(fivePct.rounded())
@@ -57,29 +73,35 @@ final class UsageModel: ObservableObject {
         self.percentage = fiveInt
         self.urgency = Urgency.from(percentage: fiveInt)
 
-        let mode = payload.meta?.displayMode ?? "full"
-        switch mode {
-        case "percent-only":
-            self.text = "\(Self.spark) \(fiveInt)%"
-        case "bar-dots":
-            let n = Self.barCells(fivePct)
-            self.text = "\(Self.spark) \(String(repeating: Self.dotFilled, count: n))\(String(repeating: Self.dotEmpty, count: 10 - n))"
-        case "number-bar":
-            let n = Self.barCells(fivePct)
-            self.text = "\(fiveInt)% \(String(repeating: Self.barFilled, count: n))\(String(repeating: Self.barEmpty, count: 10 - n))"
-        case "time-to-reset":
-            if let rem = Self.formatDuration(payload.five_hour?.resets_at, now: now), !rem.isEmpty {
-                self.text = "\(Self.timer) \(rem)"
-            } else {
-                self.text = "\(Self.timer) --"
+        if isBalanceOnly && !indicator.isEmpty {
+            self.text = "\(Self.spark) --\(indicator)"
+        } else {
+            let mode = payload.meta?.displayMode ?? "full"
+            var baseText: String
+            switch mode {
+            case "percent-only":
+                baseText = "\(Self.spark) \(fiveInt)%"
+            case "bar-dots":
+                let n = Self.barCells(fivePct)
+                baseText = "\(Self.spark) \(String(repeating: Self.dotFilled, count: n))\(String(repeating: Self.dotEmpty, count: 10 - n))"
+            case "number-bar":
+                let n = Self.barCells(fivePct)
+                baseText = "\(fiveInt)% \(String(repeating: Self.barFilled, count: n))\(String(repeating: Self.barEmpty, count: 10 - n))"
+            case "time-to-reset":
+                if let rem = Self.formatDuration(payload.five_hour?.resets_at, now: now), !rem.isEmpty {
+                    baseText = "\(Self.timer) \(rem)"
+                } else {
+                    baseText = "\(Self.timer) --"
+                }
+            default:
+                var textStr = "\(Self.spark) \(fiveInt)%"
+                if let fiveRemaining = Self.formatDuration(payload.five_hour?.resets_at, now: now), !fiveRemaining.isEmpty {
+                    textStr += " \(fiveRemaining)"
+                }
+                textStr += " · \(sevenInt)%w"
+                baseText = textStr
             }
-        default:
-            var textStr = "\(Self.spark) \(fiveInt)%"
-            if let fiveRemaining = Self.formatDuration(payload.five_hour?.resets_at, now: now), !fiveRemaining.isEmpty {
-                textStr += " \(fiveRemaining)"
-            }
-            textStr += " · \(sevenInt)%w"
-            self.text = textStr
+            self.text = baseText + indicator
         }
 
         var tooltipStr = "Claude Code Usage"
@@ -107,6 +129,21 @@ final class UsageModel: ObservableObject {
             let extraLimit = Int(((payload.extra_usage?.monthly_limit ?? 0) / 100.0).rounded())
             tooltipStr += "\n───────────────"
             tooltipStr += "\nExtra: $\(String(format: "%.2f", extraUsed))/$\(extraLimit) (\(extraPct)%)"
+        }
+
+        if !self.provider.isEmpty {
+            tooltipStr += "\nProvider: \(self.provider)"
+        }
+
+        if let bal = payload.balance {
+            if let totalCents = bal.total_cents, let usedCents = bal.used_cents {
+                let total = Double(totalCents) / 100.0
+                let used = Double(usedCents) / 100.0
+                tooltipStr += String(format: "\nBalance: $%.2f / $%.2f", used, total)
+            } else if let usedCents = bal.used_cents {
+                let used = Double(usedCents) / 100.0
+                tooltipStr += String(format: "\nBalance: $%.2f used", used)
+            }
         }
 
         self.plan = payload.meta?.plan ?? ""
@@ -148,6 +185,101 @@ final class UsageModel: ObservableObject {
             } else {
                 try? line.data(using: .utf8)?.write(to: URL(fileURLWithPath: logPath))
             }
+        }
+
+        writeMenuStateSnapshot()
+    }
+
+    func updateSources(_ sources: [DiscoveredSource]) {
+        self.availableSources = sources
+        writeMenuStateSnapshot()
+    }
+
+    func applyTestProtocolVersion(_ pv: Int) {
+        self.protocolMismatch = pv > Self.SUPPORTED_PROTOCOL_VERSION
+        writeMenuStateSnapshot()
+    }
+
+    func applyTestProvider(
+        _ providerName: String,
+        fiveHour: Int? = nil,
+        sevenDay: Int? = nil,
+        balanceTotalCents: Int? = nil,
+        balanceUsedCents: Int? = nil
+    ) {
+        let fiveWindow = fiveHour.map { UsagePayload.Window(utilization: Double($0), resets_at: nil) }
+        let sevenWindow = sevenDay.map { UsagePayload.Window(utilization: Double($0), resets_at: nil) }
+        let balance: UsagePayload.Balance?
+        if balanceTotalCents != nil || balanceUsedCents != nil {
+            balance = UsagePayload.Balance(
+                currency: "USD",
+                total_cents: balanceTotalCents,
+                used_cents: balanceUsedCents,
+                remaining_cents: nil,
+                percentage: nil
+            )
+        } else {
+            balance = nil
+        }
+        let meta = UsagePayload.Meta(
+            plan: nil,
+            fetchedAt: nil,
+            tokenSource: nil,
+            version: nil,
+            protocolVersion: 2,
+            autoCheckUpdates: nil,
+            displayMode: nil,
+            provider: providerName
+        )
+        let synth = UsagePayload(
+            five_hour: fiveWindow,
+            seven_day: sevenWindow,
+            seven_day_sonnet: nil,
+            extra_usage: nil,
+            balance: balance,
+            meta: meta
+        )
+        update(from: synth)
+    }
+
+    func writeMenuStateSnapshot() {
+        guard let path = ProcessInfo.processInfo.environment["AIGAUGE_MENU_STATE_PATH"], !path.isEmpty else { return }
+
+        let sourcesJson: [[String: Any]] = availableSources.map { source in
+            var d: [String: Any] = [
+                "name": source.name,
+                "provider": source.provider,
+                "hasToken": source.hasToken,
+                "supported": source.supported,
+            ]
+            d["baseUrl"] = source.baseUrl ?? NSNull()
+            d["skipReason"] = source.skipReason ?? NSNull()
+            return d
+        }
+
+        let state: [String: Any] = [
+            "menubarText": text,
+            "tooltip": tooltip,
+            "protocolMismatch": protocolMismatch,
+            "provider": provider,
+            "availableSources": sourcesJson,
+            "currentTokenSource": tokenSource,
+        ]
+
+        guard let data = try? JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted]) else { return }
+        let url = URL(fileURLWithPath: path)
+        try? data.write(to: url, options: .atomic)
+    }
+
+    static func providerIndicator(_ provider: String) -> String {
+        switch provider {
+        case "zai": return "z"
+        case "minimax": return "m"
+        case "openrouter": return "o"
+        case "komilion": return "k"
+        case "packy": return "p"
+        case "unknown": return "?"
+        default: return ""
         }
     }
 
