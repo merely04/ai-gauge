@@ -185,6 +185,44 @@ ai-gauge-config set plan max
 ai-gauge-config get
 ```
 
+## Using a Different Claude Provider
+
+You can monitor usage from alternative Claude API providers by creating a settings file in `~/.claude/`:
+
+```bash
+# Create a settings file for your provider
+cat > ~/.claude/settings.myprovider.json << 'EOF'
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.yourprovider.com/anthropic",
+    "ANTHROPIC_AUTH_TOKEN": "your-token-here"
+  }
+}
+EOF
+
+# Set it as your token source
+ai-gauge-config set tokenSource claude-settings:myprovider
+```
+
+Then restart the server: `systemctl --user restart ai-gauge-server` (Linux) or `launchctl kickstart -k gui/$(id -u)/com.ai-gauge.server` (macOS).
+
+### Supported Providers
+
+| Provider | `ANTHROPIC_BASE_URL` | Auth | Balance |
+|----------|---------------------|------|---------|
+| Z.ai | `https://api.z.ai/api/anthropic` | Token (no Bearer) | Rate limits |
+| MiniMax | `https://api.minimax.io/api/anthropic` | Bearer token | Rate limits |
+| OpenRouter | _(fixed URL)_ | Bearer token | Credit balance |
+| Komilion | _(fixed URL)_ | Bearer token | Wallet balance |
+| Packy | _(no public API)_ | — | — |
+
+### Notes
+
+- **Anthropic API keys** (`sk-ant-*`) cannot fetch usage via this tool. The usage endpoint requires OAuth tokens (from Claude Code CLI or OpenCode). Settings files with a plain Anthropic API key will show the source as `unknown` with no quota data.
+- **Packy** has no public balance API. Selecting it will show the provider name but no usage data.
+- File names must match `[a-zA-Z0-9_][a-zA-Z0-9_.-]*` (e.g. `settings.z.json`, `settings.mywork.json`).
+- `settings.local.json` is excluded from discovery (reserved for local overrides).
+
 ## Update Notifications
 
 ai-gauge automatically checks for updates every 24 hours (with a 30-second initial delay after startup) and notifies you via the menubar/waybar.

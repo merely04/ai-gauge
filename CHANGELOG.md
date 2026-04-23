@@ -7,6 +7,35 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-04-21
+
+### Added
+- Multi-provider token sources: `claude-settings:{name}` format for `~/.claude/settings*.json` files
+- Provider adapters: Z.ai, MiniMax, OpenRouter, Komilion (credit-balance), Packy (stub), unknown (fallback)
+- `listSettingsFiles` WebSocket command — on-demand discovery of settings files with provider detection
+- `balance` field in broadcast for credit-based providers (OpenRouter, Komilion)
+- `meta.provider` field in broadcast indicating active provider
+- `lib/providers/` registry with `ProviderAdapter` interface
+- `lib/settings-discovery.js` — secure discovery of `~/.claude/settings*.json` files
+- `lib/ssrf-guard.js` — pre-fetch SSRF protection for user-controlled base URLs
+- `lib/log-safe.js` — structured secret masking for daemon logs
+- macOS menubar: dynamic source list from `listSettingsFiles` response
+- macOS menubar: provider indicator suffix in menubar text (z.ai → `z`, etc.)
+- macOS menubar: balance line in tooltip for credit-based providers
+- macOS menubar: protocol-version gating banner for future protocol bumps
+
+### Changed
+- WebSocket protocol version bumped to 2 (additive; v1 clients unaffected)
+- `tokenSource` config accepts `claude-settings:{name}` pattern (was binary enum)
+- Log events now use structured JSON via `logJson()` with secret masking
+
+### Security
+- SSRF guard blocks HTTP, private IP ranges (RFC1918, link-local), and IPv6 loopback
+- `apiKeyHelper` field in settings files: never executed, flagged as `supported: false`
+- Symlinks in `~/.claude/` rejected during discovery (TOCTOU prevention)
+- Token values masked in all daemon log output via `lib/log-safe.js`
+- Path traversal blocked in `claude-settings:` tokenSource names
+
 ## [1.2.4] — 2026-04-21
 
 ### Fixed
