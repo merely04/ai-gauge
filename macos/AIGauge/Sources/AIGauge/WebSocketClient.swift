@@ -38,6 +38,7 @@ struct UsagePayload: Codable {
     let five_hour: Window?
     let seven_day: Window?
     let seven_day_sonnet: Window?
+    let code_review: Window?
     let extra_usage: ExtraUsage?
     let balance: Balance?
     let meta: Meta?

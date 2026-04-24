@@ -55,6 +55,7 @@ Token sources (config `tokenSource` field):
 
 - `claude-code` (default): reads `~/.claude/.credentials.json` → `claudeAiOauth.accessToken` / `expiresAt`.
 - `opencode`: reads `~/.local/share/opencode/auth.json` → `anthropic.access` / `anthropic.expires`.
+- `codex`: reads `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`) → `tokens.access_token` / `tokens.account_id`. Fetches `https://chatgpt.com/backend-api/wham/usage` (undocumented endpoint; reverse-engineered, may change). Falls back to JSONL session parsing at `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` on HTTP 4xx/5xx or network failure.
 
 State/config paths (never relocate without updating every script):
 
@@ -97,7 +98,7 @@ Providers: `anthropic` (OAuth), `zai`, `minimax` (api-key), `openrouter`, `komil
 
 Security: symlinks rejected, apiKeyHelper never executed, files >1MB rejected, settings.local.json excluded, names validated with `/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/`.
 
-Token source pattern for `claude-settings:` sources: `^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
+Token source pattern for `claude-settings:` sources: `^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
 
 ## macOS specifics
 
@@ -164,7 +165,7 @@ Field notes:
 - `meta.plan`, `meta.tokenSource`, and `meta.fetchedAt` are injected by the server from `config.json` / the current state (not upstream Anthropic fields). `tokenSource` is re-broadcast on every poll and immediately after a `setConfig` mutation so clients can reflect the current selection (used by the macOS menubar for checkmarks).
 - `meta.provider` — active provider name as detected by `lib/providers/index.js` (e.g. `"anthropic"`, `"zai"`, `"openrouter"`). Injected by the server; not an upstream field.
 - `meta.version` — the daemon's own ai-gauge version (from `package.json`).
-- `meta.protocolVersion` — currently `2` (bumped from 1 when `balance` and `meta.provider` were added). Additive change; v1 clients that ignore unknown fields are unaffected.
+- `meta.protocolVersion` — currently `3` (bumped from 2 when `code_review` top-level field was added for Codex). Additive change; v2 clients that ignore unknown fields are unaffected.
 - `meta.autoCheckUpdates` — current value of the `autoCheckUpdates` config key.
 - `meta.displayMode` — current display mode: `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`. Clients fall back to `full` if absent or unrecognized.
 - Any of the `seven_day_*` windows may be `null`.
@@ -204,8 +205,8 @@ Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, write
 {"type":"setConfig","key":"displayMode","value":"bar-dots"}
 ```
 
-- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`; `tokenSource` → `claude-code`, `opencode`; `autoCheckUpdates` → `true`, `false`; `displayMode` → `full`, `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
-- `tokenSource` also accepts `claude-settings:{name}` values matching `^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
+- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`, `plus` (Codex), `business` (Codex), `edu` (Codex); `tokenSource` → `claude-code`, `opencode`, `codex`; `autoCheckUpdates` → `true`, `false`; `displayMode` → `full`, `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
+- `tokenSource` also accepts `claude-settings:{name}` values matching `^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
 - Server **rejects** any value outside the canonical enum (logs warning, config unchanged)
 - Do NOT change the raw-broadcast shape without updating both `bin/ai-gauge-waybar` and `macos/AIGauge/Sources/AIGauge/UsageModel.swift` in the same commit.
 

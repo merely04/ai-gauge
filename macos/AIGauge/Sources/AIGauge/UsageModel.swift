@@ -15,10 +15,10 @@ enum Urgency {
 
 @MainActor
 final class UsageModel: ObservableObject {
-    static let SUPPORTED_PROTOCOL_VERSION = 2
+    static let SUPPORTED_PROTOCOL_VERSION = 3
 
     /// Keep in sync with `lib/config.js:TOKEN_SOURCE_PATTERN`.
-    nonisolated static let TOKEN_SOURCE_PATTERN = #"^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$"#
+    nonisolated static let TOKEN_SOURCE_PATTERN = #"^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$"#
 
     nonisolated static func isValidTokenSource(_ value: String) -> Bool {
         guard let regex = try? NSRegularExpression(pattern: TOKEN_SOURCE_PATTERN) else { return false }
@@ -247,6 +247,7 @@ final class UsageModel: ObservableObject {
             five_hour: fiveWindow,
             seven_day: sevenWindow,
             seven_day_sonnet: nil,
+            code_review: nil,
             extra_usage: nil,
             balance: balance,
             meta: meta
@@ -290,6 +291,7 @@ final class UsageModel: ObservableObject {
         case "openrouter": return "o"
         case "komilion": return "k"
         case "packy": return "p"
+        case "codex": return "◆"
         case "unknown": return "?"
         default: return ""
         }

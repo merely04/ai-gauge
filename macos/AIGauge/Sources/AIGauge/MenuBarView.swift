@@ -10,7 +10,8 @@ struct MenuBarView: View {
     private let plans: [String] = ["max", "pro", "team", "enterprise", "unknown"]
     private let sources: [(value: String, display: String)] = [
         ("claude-code", "Claude Code"),
-        ("opencode", "OpenCode")
+        ("opencode", "OpenCode"),
+        ("codex", "Codex")
     ]
     private let displayModes: [(value: String, display: String)] = [
         (value: "full", display: "Full"),

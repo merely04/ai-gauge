@@ -129,10 +129,10 @@ if [[ "${1:-}" == "set" ]]; then
             esac
             ;;
         tokenSource)
-            if [[ "$value" =~ ^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$ ]]; then
+            if [[ "$value" =~ ^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$ ]]; then
                 :
             else
-                echo "Error: tokenSource must match pattern ^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$" >&2
+                echo "Error: tokenSource must match pattern ^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$" >&2
                 exit 1
             fi
             ;;
@@ -197,7 +197,7 @@ case "$choice" in
         if [[ -f "$SCRIPT_DIR/../lib/cli-list-settings.js" ]]; then
             settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" 2>/dev/null | awk -F'|' '{print "claude-settings:"$1}')
         fi
-        new_source=$(printf '%s\n' "claude-code" "opencode" ${settings_list:+$settings_list} \
+        new_source=$(printf '%s\n' "claude-code" "opencode" "codex" ${settings_list:+$settings_list} \
             | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 250 -p "Token Source" 2>/dev/null
         ) || exit 0
         apply_config tokenSource "$new_source" "Token source: $new_source"

@@ -7,6 +7,22 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-04-24
+
+### Added
+- Codex (ChatGPT Plus/Pro/Business/Enterprise/Edu) usage monitoring via new `tokenSource: "codex"` — reads `~/.codex/auth.json`, fetches `chatgpt.com/backend-api/wham/usage`
+- JSONL session fallback for Codex when HTTP endpoint is unreachable (parses `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`)
+- Plan values `plus`, `business`, `edu` for Codex subscription tiers
+- Top-level broadcast field `code_review` (Codex code review rate limit window)
+- "Codex" entry in macOS menubar "Change token source" submenu
+- `chatgpt.com` added to SSRF known-provider host allowlist
+
+### Changed
+- WebSocket `protocolVersion` bumped from `2` → `3` (additive — v2 clients ignore the new `code_review` field)
+
+### Security
+- `account_id` and `refresh_token` now redacted (`***`) in daemon structured logs via `lib/log-safe.js`
+
 ## [1.3.0] — 2026-04-21
 
 ### Fixed
