@@ -221,6 +221,14 @@ describe('readCodexCredentials', () => {
     return `${header}.${p}.fake_sig`;
   }
 
+  function makeCodexAccessToken({ exp, planType }) {
+    const payload = { exp };
+    if (planType !== undefined) {
+      payload['https://api.openai.com/auth'] = { chatgpt_plan_type: planType };
+    }
+    return makeJwt(payload);
+  }
+
   function createAuthJson(dir, tokens) {
     const authData = { auth_mode: 'Chatgpt', tokens, last_refresh: new Date().toISOString() };
     mkdirSync(dir, { recursive: true });
@@ -229,10 +237,11 @@ describe('readCodexCredentials', () => {
 
   it('happy path — returns token, expiresAt, subscriptionType, account_id', async () => {
     tempDir = `/tmp/codex-cred-test-${Math.random().toString(36).slice(2)}`;
+    const accessJwt = makeCodexAccessToken({ exp: 9999999999, planType: 'pro' });
     createAuthJson(tempDir, {
-      access_token: 'FAKE_ACCESS',
+      access_token: accessJwt,
       account_id: 'FAKE_ACCOUNT',
-      id_token: makeJwt({ exp: 9999999999, plan_type: 'pro' }),
+      id_token: makeJwt({ exp: 9999999999 }),
       refresh_token: 'FAKE_REFRESH',
     });
     process.env.CODEX_HOME = tempDir;
@@ -240,18 +249,18 @@ describe('readCodexCredentials', () => {
     delete process.env.CODEX_HOME;
 
     expect(r).not.toBeNull();
-    expect(r.token).toBe('FAKE_ACCESS');
+    expect(r.token).toBe(accessJwt);
     expect(r.account_id).toBe('FAKE_ACCOUNT');
     expect(r.subscriptionType).toBe('pro');
     expect(r.expiresAt).toBe(9999999999000);
   });
 
-  it('malformed JWT returns expiresAt=null, subscriptionType=unknown, no throw', async () => {
+  it('malformed access_token returns expiresAt=null, subscriptionType=unknown, no throw', async () => {
     tempDir = `/tmp/codex-cred-malformed-${Math.random().toString(36).slice(2)}`;
     createAuthJson(tempDir, {
-      access_token: 'FAKE_ACCESS',
+      access_token: 'not.a.valid.jwt!!!',
       account_id: 'FAKE_ACCOUNT',
-      id_token: 'not.a.valid.jwt!!!',
+      id_token: 'also.malformed.jwt',
       refresh_token: 'X',
     });
     process.env.CODEX_HOME = tempDir;
@@ -261,7 +270,7 @@ describe('readCodexCredentials', () => {
     expect(r).not.toBeNull();
     expect(r.expiresAt).toBeNull();
     expect(r.subscriptionType).toBe('unknown');
-    expect(r.token).toBe('FAKE_ACCESS');
+    expect(r.token).toBe('not.a.valid.jwt!!!');
   });
 
   it('missing auth.json returns null', async () => {
@@ -273,7 +282,7 @@ describe('readCodexCredentials', () => {
 
   it('missing access_token returns null', async () => {
     tempDir = `/tmp/codex-cred-notok-${Math.random().toString(36).slice(2)}`;
-    createAuthJson(tempDir, { account_id: 'FAKE_ACCOUNT', id_token: makeJwt({ exp: 9999, plan_type: 'pro' }) });
+    createAuthJson(tempDir, { account_id: 'FAKE_ACCOUNT', id_token: makeJwt({ exp: 9999 }) });
     process.env.CODEX_HOME = tempDir;
     const r = await readCodexCredentials();
     delete process.env.CODEX_HOME;
@@ -282,29 +291,51 @@ describe('readCodexCredentials', () => {
 
   it('missing account_id returns null', async () => {
     tempDir = `/tmp/codex-cred-noacc-${Math.random().toString(36).slice(2)}`;
-    createAuthJson(tempDir, { access_token: 'FAKE', id_token: makeJwt({ exp: 9999 }) });
+    createAuthJson(tempDir, { access_token: makeCodexAccessToken({ exp: 9999, planType: 'pro' }) });
     process.env.CODEX_HOME = tempDir;
     const r = await readCodexCredentials();
     delete process.env.CODEX_HOME;
     expect(r).toBeNull();
   });
 
-  it('JWT payload missing plan_type returns subscriptionType=unknown', async () => {
+  it('access_token without chatgpt_plan_type returns subscriptionType=unknown', async () => {
     tempDir = `/tmp/codex-cred-noplan-${Math.random().toString(36).slice(2)}`;
     createAuthJson(tempDir, {
-      access_token: 'FA',
+      access_token: makeJwt({ exp: 9999999999, sub: 'user-x' }),
       account_id: 'AA',
-      id_token: makeJwt({ exp: 9999999999, chatgpt_user_id: 'u-x' }),
     });
     process.env.CODEX_HOME = tempDir;
     const r = await readCodexCredentials();
     delete process.env.CODEX_HOME;
     expect(r.subscriptionType).toBe('unknown');
   });
+
+  it('access_token with legacy plan_type claim still works', async () => {
+    tempDir = `/tmp/codex-cred-legacy-${Math.random().toString(36).slice(2)}`;
+    createAuthJson(tempDir, {
+      access_token: makeJwt({ exp: 9999999999, plan_type: 'business' }),
+      account_id: 'AA',
+    });
+    process.env.CODEX_HOME = tempDir;
+    const r = await readCodexCredentials();
+    delete process.env.CODEX_HOME;
+    expect(r.subscriptionType).toBe('business');
+  });
 });
 
 describe('parseCodexIdToken', () => {
-  it('happy path — extracts exp and plan_type', () => {
+  it('extracts plan_type from OpenAI auth claim (real Codex shape)', () => {
+    const jwt = (() => {
+      const payload = { exp: 9999999999, 'https://api.openai.com/auth': { chatgpt_plan_type: 'plus' } };
+      const p = Buffer.from(JSON.stringify(payload)).toString('base64url');
+      return `eyJhbGciOiJSUzI1NiJ9.${p}.sig`;
+    })();
+    const result = parseCodexIdToken(jwt);
+    expect(result.exp).toBe(9999999999);
+    expect(result.plan_type).toBe('plus');
+  });
+
+  it('extracts legacy top-level plan_type', () => {
     const payload = Buffer.from(JSON.stringify({ exp: 9999999999, plan_type: 'pro' })).toString('base64url');
     const jwt = `eyJhbGciOiJSUzI1NiJ9.${payload}.sig`;
     const result = parseCodexIdToken(jwt);
