@@ -1,0 +1,15 @@
+{
+  "plan_type": "pro",
+  "rate_limit": {
+    "primary_window": { "utilization": 67, "reset_at": 1745539200 },
+    "secondary_window": { "utilization": 23, "reset_at": 1745798400 }
+  },
+  "code_review_rate_limit": {
+    "primary_window": { "utilization": 30, "reset_at": 1745539200 }
+  },
+  "credits": {
+    "has_credits": true,
+    "balance": 5.39,
+    "currency": "USD"
+  }
+}

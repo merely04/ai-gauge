@@ -7,6 +7,7 @@ import { createThresholdNotifier } from '../lib/threshold-notify.js';
 import { createUpdateLifecycle } from '../lib/update-lifecycle.js';
 import { atomicWriteJSON } from '../lib/atomic-write.js';
 import { readClaudeCodeCredentials, readOpenCodeCredentials, isTokenValid, CREDS_FILE, OPENCODE_AUTH_FILE_PRIMARY, OPENCODE_AUTH_FILE_MAC } from '../lib/credentials.js';
+import { readCodexCredentials } from '../lib/credentials-codex.js';
 import { discoverSettingsFiles, readSettingsFileForCreds } from '../lib/settings-discovery.js';
 import { logJson, sanitizeError } from '../lib/log-safe.js';
 import { buildMeta, PACKAGE_VERSION } from '../lib/meta.js';
@@ -19,6 +20,7 @@ import '../lib/providers/minimax.js';
 import '../lib/providers/openrouter.js';
 import '../lib/providers/komilion.js';
 import '../lib/providers/packy.js';
+import '../lib/providers/codex.js';
 import '../lib/providers/unknown.js';
 
 const STATE_DIR = `${process.platform === 'darwin' ? (process.env.TMPDIR || '/tmp') : (process.env.XDG_RUNTIME_DIR || '/tmp')}/ai-gauge`;
@@ -64,6 +66,16 @@ async function readCredentials(config) {
       return { ...c, tokenSource: src, provider: 'anthropic', baseUrl: null };
     }
     logJson(console.error, 'credentials_missing', { source: 'opencode' });
+    return null;
+  }
+
+  if (src === 'codex') {
+    const c = await readCodexCredentials();
+    if (c) {
+      logJson(console.error, 'credentials_loaded', { source: 'codex', provider: 'codex' });
+      return { ...c, tokenSource: src, provider: 'codex', baseUrl: null };
+    }
+    logJson(console.error, 'credentials_missing', { source: 'codex' });
     return null;
   }
 
@@ -185,7 +197,7 @@ async function fetchUsage(creds, config) {
 
   try {
     const req = adapter.buildRequest(
-      { token: creds.token, claudeVersion },
+      { token: creds.token, claudeVersion, account_id: creds.account_id },
       { baseUrl: creds.baseUrl }
     );
 
@@ -212,6 +224,9 @@ async function fetchUsage(creds, config) {
         provider: providerName,
         ...sanitizeError(new Error(parsed.error.reason ?? 'unknown')),
       });
+      if (creds.provider === 'codex' && parsed.error.status && parsed.error.status >= 400) {
+        return await tryCodexJsonlFallback(creds, effectiveConfig);
+      }
       return false;
     }
 
@@ -228,8 +243,30 @@ async function fetchUsage(creds, config) {
     return true;
   } catch (err) {
     logJson(console.warn, 'fetch_error', { provider: providerName, ...sanitizeError(err) });
+    if (creds.provider === 'codex') {
+      return await tryCodexJsonlFallback(creds, effectiveConfig);
+    }
     return false;
   }
+}
+
+async function tryCodexJsonlFallback(creds, config) {
+  try {
+    const { parseCodexJsonlFallback } = await import('../lib/providers/codex.js');
+    const fallback = await parseCodexJsonlFallback({ codexHome: process.env.CODEX_HOME });
+    if (fallback) {
+      cachedData = {
+        ...fallback.rateLimits,
+        balance: null,
+        meta: buildMeta(config, { subscriptionType: creds.subscriptionType, provider: 'codex' }),
+      };
+      await writeUsageAtomic(cachedData);
+      return true;
+    }
+  } catch (e) {
+    logJson(console.error, 'codex_jsonl_fallback_failed', { error: String(e) });
+  }
+  return false;
 }
 
 async function fetchAndHandleBroadcast() {

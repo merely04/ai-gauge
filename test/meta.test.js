@@ -11,7 +11,7 @@ describe("meta builder", () => {
       displayMode: "full",
       fetchedAt: "2026-01-01T00:00:00.000Z",
       version: expect.any(String),
-      protocolVersion: 2,
+      protocolVersion: 3,
       autoCheckUpdates: true,
       provider: "anthropic",
     });
@@ -27,11 +27,11 @@ describe("meta builder", () => {
     expect(meta.plan).toBe("pro");
   });
 
-  test("protocolVersion is 2", () => {
-    const meta = buildMeta({ tokenSource: "claude-code" }, { fetchedAt: "2026-01-01T00:00:00.000Z" });
-    expect(meta.protocolVersion).toBe(2);
-    expect(meta.protocolVersion).not.toBe(1);
-    expect(META_PROTOCOL_VERSION).toBe(2);
+  test("protocolVersion is 3", () => {
+    const meta = buildMeta({});
+    expect(meta.protocolVersion).toBe(3);
+    expect(meta.protocolVersion).not.toBe(2);
+    expect(META_PROTOCOL_VERSION).toBe(3);
   });
 
   test("provider defaults to 'anthropic' when not supplied", () => {

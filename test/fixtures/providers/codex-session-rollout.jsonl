@@ -1,0 +1,4 @@
+{"type":"session_start","timestamp":"2026-04-24T19:00:00Z","session_id":"abc123"}
+{"type":"token_count","timestamp":"2026-04-24T19:01:00Z","total_tokens":1234,"rate_limits":{"primary_window":{"utilization":55,"reset_at":1745539200},"secondary_window":{"utilization":12,"reset_at":1745798400}}}
+{"type":"model_response","timestamp":"2026-04-24T19:01:05Z","model":"gpt-5","tokens":400}
+{"type":"session_end","timestamp":"2026-04-24T19:05:00Z","duration_seconds":300}

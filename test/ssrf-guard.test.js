@@ -127,4 +127,17 @@ describe('isKnownProviderHost', () => {
   it('attacker.com → null', () => {
     expect(isKnownProviderHost('attacker.com')).toBeNull();
   });
+
+  it('recognizes chatgpt.com as codex', () => {
+    expect(isKnownProviderHost('chatgpt.com')).toBe('codex');
+    expect(isKnownProviderHost('api.chatgpt.com')).toBe('codex');
+  });
+
+  it('allows chatgpt.com via validateProviderUrl', () => {
+    expect(validateProviderUrl('https://chatgpt.com/backend-api/wham/usage').allowed).toBe(true);
+  });
+
+  it('rejects http://chatgpt.com (HTTP not HTTPS)', () => {
+    expect(validateProviderUrl('http://chatgpt.com').allowed).toBe(false);
+  });
 });
