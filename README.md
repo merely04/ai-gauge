@@ -209,6 +209,8 @@ ai-gauge-config get
 
 ai-gauge can monitor Codex CLI usage from a ChatGPT Plus / Pro / Business / Enterprise / Edu subscription.
 
+![Codex submenu](assets/macos-codex-submenu.png)
+
 ```bash
 # Make sure Codex CLI is logged in (if you haven't already):
 codex auth login
