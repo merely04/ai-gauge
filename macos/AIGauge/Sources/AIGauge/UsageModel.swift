@@ -116,6 +116,8 @@ final class UsageModel: ObservableObject {
             self.text = baseText + indicator
         }
 
+        let hasSecondary = payload.secondary != nil
+
         var tooltipStr = Self.providerLabel(provider: self.provider, tokenSource: payload.meta?.tokenSource ?? "")
         if isWaiting {
             tooltipStr += "\n───────────────"
@@ -128,6 +130,9 @@ final class UsageModel: ObservableObject {
             return
         }
         tooltipStr += "\n───────────────"
+        if hasSecondary {
+            tooltipStr += "\n\(Self.providerShortName(provider: self.provider))"
+        }
         tooltipStr += "\n5-hour:  \(fiveInt)%"
         if let fiveLong = Self.formatDurationLong(payload.five_hour?.resets_at, now: now), !fiveLong.isEmpty {
             tooltipStr += "  (resets in \(fiveLong))"
@@ -161,14 +166,13 @@ final class UsageModel: ObservableObject {
             tooltipStr += "\nExtra: $\(String(format: "%.2f", extraUsed))/$\(extraLimit) (\(extraPct)%)"
         }
 
-        if !self.provider.isEmpty {
+        if !self.provider.isEmpty && !hasSecondary {
             tooltipStr += "\nProvider: \(self.provider)"
         }
 
         if let secondary = payload.secondary {
             tooltipStr += "\n───────────────"
-            let secondaryName = Self.providerLabel(provider: secondary.provider ?? "", tokenSource: "")
-            tooltipStr += "\n\(secondaryName)"
+            tooltipStr += "\n\(Self.providerShortName(provider: secondary.provider ?? ""))"
             if let pct = secondary.five_hour?.utilization {
                 let int = Int(pct.rounded())
                 tooltipStr += "\n5-hour:  \(int)%"
@@ -376,6 +380,19 @@ final class UsageModel: ObservableObject {
             }
             if tokenSource == "opencode" { return "OpenCode Usage" }
             return "Claude Code Usage"
+        }
+    }
+
+    static func providerShortName(provider: String) -> String {
+        switch provider {
+        case "anthropic": return "Claude"
+        case "codex": return "Codex"
+        case "zai": return "Z.ai"
+        case "minimax": return "MiniMax"
+        case "openrouter": return "OpenRouter"
+        case "komilion": return "Komilion"
+        case "packy": return "Packy"
+        default: return provider.isEmpty ? "Unknown" : provider
         }
     }
 
