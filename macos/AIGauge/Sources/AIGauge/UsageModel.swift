@@ -118,7 +118,12 @@ final class UsageModel: ObservableObject {
 
         let hasSecondary = payload.secondary != nil
 
-        var tooltipStr = Self.providerLabel(provider: self.provider, tokenSource: payload.meta?.tokenSource ?? "")
+        var tooltipStr: String
+        if hasSecondary {
+            tooltipStr = Self.providerShortName(provider: self.provider)
+        } else {
+            tooltipStr = Self.providerLabel(provider: self.provider, tokenSource: payload.meta?.tokenSource ?? "")
+        }
         if isWaiting {
             tooltipStr += "\n───────────────"
             tooltipStr += "\nWaiting for data…"
@@ -130,9 +135,6 @@ final class UsageModel: ObservableObject {
             return
         }
         tooltipStr += "\n───────────────"
-        if hasSecondary {
-            tooltipStr += "\n\(Self.providerShortName(provider: self.provider))"
-        }
         tooltipStr += "\n5-hour:  \(fiveInt)%"
         if let fiveLong = Self.formatDurationLong(payload.five_hour?.resets_at, now: now), !fiveLong.isEmpty {
             tooltipStr += "  (resets in \(fiveLong))"
