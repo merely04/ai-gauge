@@ -11,7 +11,7 @@ describe("meta builder", () => {
       displayMode: "full",
       fetchedAt: "2026-01-01T00:00:00.000Z",
       version: expect.any(String),
-      protocolVersion: 3,
+      protocolVersion: 4,
       autoCheckUpdates: true,
       provider: "anthropic",
     });
@@ -27,11 +27,11 @@ describe("meta builder", () => {
     expect(meta.plan).toBe("pro");
   });
 
-  test("protocolVersion is 3", () => {
+  test("protocolVersion is 4", () => {
     const meta = buildMeta({});
-    expect(meta.protocolVersion).toBe(3);
-    expect(meta.protocolVersion).not.toBe(2);
-    expect(META_PROTOCOL_VERSION).toBe(3);
+    expect(meta.protocolVersion).toBe(4);
+    expect(meta.protocolVersion).not.toBe(3);
+    expect(META_PROTOCOL_VERSION).toBe(4);
   });
 
   test("provider defaults to 'anthropic' when not supplied", () => {

@@ -68,7 +68,11 @@ async function readCredentials(config) {
   if (src === 'opencode') {
     const c = await readOpenCodeCredentials();
     if (c) {
-      logJson(console.error, 'credentials_loaded', { source: 'opencode', provider: 'anthropic' });
+      logJson(console.error, 'credentials_loaded', {
+        source: 'opencode',
+        provider: 'anthropic',
+        secondary: c.secondary ? c.secondary.provider : null,
+      });
       return { ...c, tokenSource: src, provider: 'anthropic', baseUrl: null };
     }
     logJson(console.error, 'credentials_missing', { source: 'opencode' });
@@ -257,9 +261,13 @@ async function fetchUsage(creds, config, { generation, signal } = {}) {
 
     if (generation != null && generation !== fetchGeneration) return false;
 
+    const secondary = creds.secondary ? await fetchSecondary(creds.secondary, signal) : null;
+    if (generation != null && generation !== fetchGeneration) return false;
+
     cachedData = {
       ...(parsed.rateLimits ?? {}),
       balance: parsed.balance ?? null,
+      secondary,
       meta: buildMeta(effectiveConfig, {
         subscriptionType: creds.subscriptionType,
         provider: creds.provider,
@@ -275,6 +283,59 @@ async function fetchUsage(creds, config, { generation, signal } = {}) {
       return await tryCodexJsonlFallback(creds, effectiveConfig, { generation });
     }
     return false;
+  }
+}
+
+async function fetchSecondary(secondaryCreds, signal) {
+  if (!secondaryCreds?.token || !secondaryCreds?.account_id) return null;
+  if (secondaryCreds.expiresAt !== null && !isTokenValid(secondaryCreds.expiresAt)) {
+    logJson(console.error, 'secondary_token_expired', { provider: secondaryCreds.provider });
+    return null;
+  }
+
+  const adapter = getProvider(secondaryCreds.provider ?? 'codex');
+  if (adapter.kind === 'stub') return null;
+
+  try {
+    const req = adapter.buildRequest(
+      { token: secondaryCreds.token, account_id: secondaryCreds.account_id, claudeVersion },
+      { baseUrl: null }
+    );
+    const timeoutSignal = AbortSignal.timeout(10_000);
+    const fetchSignal = signal && typeof AbortSignal.any === 'function'
+      ? AbortSignal.any([signal, timeoutSignal])
+      : timeoutSignal;
+
+    const res = await doFetch(req.url, {
+      method: req.method ?? 'GET',
+      headers: req.headers,
+      redirect: 'manual',
+      signal: fetchSignal,
+    });
+
+    if (res.status >= 300 && res.status < 400) return null;
+
+    let json = null;
+    try { json = await res.json(); } catch {}
+
+    const parsed = adapter.parseResponse(json, res.status);
+    if (parsed.error) {
+      logJson(console.warn, 'secondary_provider_error', {
+        provider: secondaryCreds.provider,
+        ...sanitizeError(new Error(parsed.error.reason ?? 'unknown')),
+      });
+      return null;
+    }
+
+    return {
+      provider: secondaryCreds.provider,
+      ...(parsed.rateLimits ?? {}),
+      balance: parsed.balance ?? null,
+    };
+  } catch (err) {
+    if (signal?.aborted) return null;
+    logJson(console.warn, 'secondary_fetch_error', { provider: secondaryCreds.provider, ...sanitizeError(err) });
+    return null;
   }
 }
 
@@ -310,6 +371,7 @@ function buildEmptyBroadcast(config, provider) {
     seven_day_cowork: null,
     seven_day_omelette: null,
     balance: null,
+    secondary: null,
     meta: buildMeta(config, { provider: provider ?? 'unknown' }),
   };
 }

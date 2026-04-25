@@ -15,7 +15,7 @@ enum Urgency {
 
 @MainActor
 final class UsageModel: ObservableObject {
-    static let SUPPORTED_PROTOCOL_VERSION = 3
+    static let SUPPORTED_PROTOCOL_VERSION = 4
 
     /// Keep in sync with `lib/config.js:TOKEN_SOURCE_PATTERN`.
     nonisolated static let TOKEN_SOURCE_PATTERN = #"^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$"#
@@ -165,6 +165,37 @@ final class UsageModel: ObservableObject {
             tooltipStr += "\nProvider: \(self.provider)"
         }
 
+        if let secondary = payload.secondary {
+            tooltipStr += "\n───────────────"
+            let secondaryName = Self.providerLabel(provider: secondary.provider ?? "", tokenSource: "")
+            tooltipStr += "\n\(secondaryName)"
+            if let pct = secondary.five_hour?.utilization {
+                let int = Int(pct.rounded())
+                tooltipStr += "\n5-hour:  \(int)%"
+                if let r = Self.formatDurationLong(secondary.five_hour?.resets_at, now: now), !r.isEmpty {
+                    tooltipStr += "  (resets in \(r))"
+                }
+            }
+            if let pct = secondary.seven_day?.utilization {
+                let int = Int(pct.rounded())
+                tooltipStr += "\nWeekly:  \(int)%"
+                if let r = Self.formatDurationLong(secondary.seven_day?.resets_at, now: now), !r.isEmpty {
+                    tooltipStr += "  (resets in \(r))"
+                }
+            }
+            if let pct = secondary.code_review?.utilization {
+                let int = Int(pct.rounded())
+                tooltipStr += "\nCode review:  \(int)%"
+                if let r = Self.formatDurationLong(secondary.code_review?.resets_at, now: now), !r.isEmpty {
+                    tooltipStr += "  (resets in \(r))"
+                }
+            }
+            if let bal = secondary.balance, let total = bal.total_cents {
+                let dollars = Double(total) / 100.0
+                tooltipStr += String(format: "\nBalance: $%.2f available", dollars)
+            }
+        }
+
         if let bal = payload.balance {
             if let totalCents = bal.total_cents, let usedCents = bal.used_cents {
                 let total = Double(totalCents) / 100.0
@@ -259,7 +290,7 @@ final class UsageModel: ObservableObject {
             fetchedAt: nil,
             tokenSource: nil,
             version: nil,
-            protocolVersion: 3,
+            protocolVersion: 4,
             autoCheckUpdates: nil,
             displayMode: nil,
             provider: providerName
@@ -271,6 +302,7 @@ final class UsageModel: ObservableObject {
             code_review: nil,
             extra_usage: nil,
             balance: balance,
+            secondary: nil,
             meta: meta
         )
         update(from: synth)

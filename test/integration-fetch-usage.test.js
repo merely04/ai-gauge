@@ -91,6 +91,105 @@ describe('fetchUsage integration', () => {
   });
 });
 
+describe('fetchUsage opencode + secondary codex', () => {
+  const anthropicHappy = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/anthropic-happy.json'), 'utf8'));
+
+  afterEach(() => {
+    setFetchImpl(null);
+  });
+
+  it('fetches both anthropic and codex, attaches secondary to broadcast', async () => {
+    const calls = [];
+    setFetchImpl(async (url) => {
+      calls.push(url);
+      if (url.includes('api.anthropic.com')) {
+        return new Response(JSON.stringify(anthropicHappy), { status: 200 });
+      }
+      if (url.includes('chatgpt.com')) {
+        return new Response(JSON.stringify(codexFixturePro), { status: 200 });
+      }
+      return new Response('not found', { status: 404 });
+    });
+
+    const result = await fetchUsage({
+      token: 'ANT_TOKEN',
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'opencode',
+      baseUrl: null,
+      subscriptionType: 'unknown',
+      secondary: {
+        provider: 'codex',
+        token: 'CODEX_TOKEN',
+        account_id: 'user-x',
+        expiresAt: null,
+        subscriptionType: 'unknown',
+      },
+    });
+
+    expect(result).toBe(true);
+    expect(calls.some((u) => u.includes('api.anthropic.com'))).toBe(true);
+    expect(calls.some((u) => u.includes('chatgpt.com'))).toBe(true);
+  });
+
+  it('primary success + secondary fail still returns true (secondary is best-effort)', async () => {
+    setFetchImpl(async (url) => {
+      if (url.includes('api.anthropic.com')) {
+        return new Response(JSON.stringify(anthropicHappy), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 });
+    });
+
+    const result = await fetchUsage({
+      token: 'ANT_TOKEN',
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'opencode',
+      baseUrl: null,
+      subscriptionType: 'unknown',
+      secondary: {
+        provider: 'codex',
+        token: 'EXPIRED',
+        account_id: 'user-x',
+        expiresAt: null,
+        subscriptionType: 'unknown',
+      },
+    });
+
+    expect(result).toBe(true);
+  });
+
+  it('skips secondary fetch when secondary expires is in the past', async () => {
+    let codexCalled = false;
+    setFetchImpl(async (url) => {
+      if (url.includes('chatgpt.com')) {
+        codexCalled = true;
+        return new Response('should not be called', { status: 200 });
+      }
+      return new Response(JSON.stringify(anthropicHappy), { status: 200 });
+    });
+
+    const result = await fetchUsage({
+      token: 'ANT_TOKEN',
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'opencode',
+      baseUrl: null,
+      subscriptionType: 'unknown',
+      secondary: {
+        provider: 'codex',
+        token: 'X',
+        account_id: 'y',
+        expiresAt: Date.now() - 60_000,
+        subscriptionType: 'unknown',
+      },
+    });
+
+    expect(result).toBe(true);
+    expect(codexCalled).toBe(false);
+  });
+});
+
 describe('fetchUsage codex integration', () => {
   const codexHomeBase = `/tmp/codex-integ-${Math.random().toString(36).slice(2)}`;
 

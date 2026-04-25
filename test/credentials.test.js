@@ -192,7 +192,6 @@ describe('Credential Reading', () => {
     const authData = {
       anthropic: {
         access: 'test-token-no-expiry',
-        // expires is missing, should default to Infinity
       },
     };
 
@@ -202,6 +201,73 @@ describe('Credential Reading', () => {
 
     expect(result).not.toBeNull();
     expect(result.expiresAt).toBe(Infinity);
+  });
+
+  it('extracts secondary codex creds from opencode auth.json with openai oauth block', async () => {
+    tempDir = createTempDir();
+    const primaryPath = join(tempDir, '.local', 'share', 'opencode', 'auth.json');
+    const macPath = join(tempDir, 'Library', 'Application Support', 'opencode', 'auth.json');
+    ensureDir(join(tempDir, '.local', 'share', 'opencode'));
+
+    writeFileSync(primaryPath, JSON.stringify({
+      anthropic: { type: 'oauth', access: 'ant-token', expires: Date.now() + 3600000 },
+      openai: { type: 'oauth', access: 'oai-token', accountId: 'user-codex', expires: Date.now() + 7200000, refresh: 'r' },
+    }));
+
+    const result = await readOpenCodeCredentials(primaryPath, macPath);
+
+    expect(result).not.toBeNull();
+    expect(result.token).toBe('ant-token');
+    expect(result.secondary).not.toBeNull();
+    expect(result.secondary.provider).toBe('codex');
+    expect(result.secondary.token).toBe('oai-token');
+    expect(result.secondary.account_id).toBe('user-codex');
+    expect(result.secondary.expiresAt).toBeGreaterThan(Date.now());
+  });
+
+  it('returns secondary=null when openai block is api-key (not oauth)', async () => {
+    tempDir = createTempDir();
+    const primaryPath = join(tempDir, '.local', 'share', 'opencode', 'auth.json');
+    const macPath = join(tempDir, 'Library', 'Application Support', 'opencode', 'auth.json');
+    ensureDir(join(tempDir, '.local', 'share', 'opencode'));
+
+    writeFileSync(primaryPath, JSON.stringify({
+      anthropic: { type: 'oauth', access: 'ant-token', expires: Date.now() + 3600000 },
+      openai: { type: 'api', key: 'sk-...' },
+    }));
+
+    const result = await readOpenCodeCredentials(primaryPath, macPath);
+    expect(result.secondary).toBeNull();
+  });
+
+  it('returns secondary=null when openai block is missing accountId', async () => {
+    tempDir = createTempDir();
+    const primaryPath = join(tempDir, '.local', 'share', 'opencode', 'auth.json');
+    const macPath = join(tempDir, 'Library', 'Application Support', 'opencode', 'auth.json');
+    ensureDir(join(tempDir, '.local', 'share', 'opencode'));
+
+    writeFileSync(primaryPath, JSON.stringify({
+      anthropic: { type: 'oauth', access: 'ant-token', expires: Date.now() + 3600000 },
+      openai: { type: 'oauth', access: 'oai-token', expires: Date.now() + 7200000 },
+    }));
+
+    const result = await readOpenCodeCredentials(primaryPath, macPath);
+    expect(result.secondary).toBeNull();
+  });
+
+  it('returns secondary=null when no openai block at all', async () => {
+    tempDir = createTempDir();
+    const primaryPath = join(tempDir, '.local', 'share', 'opencode', 'auth.json');
+    const macPath = join(tempDir, 'Library', 'Application Support', 'opencode', 'auth.json');
+    ensureDir(join(tempDir, '.local', 'share', 'opencode'));
+
+    writeFileSync(primaryPath, JSON.stringify({
+      anthropic: { type: 'oauth', access: 'ant-token', expires: Date.now() + 3600000 },
+    }));
+
+    const result = await readOpenCodeCredentials(primaryPath, macPath);
+    expect(result).not.toBeNull();
+    expect(result.secondary).toBeNull();
   });
 });
 
