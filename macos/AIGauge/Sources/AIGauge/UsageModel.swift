@@ -113,7 +113,7 @@ final class UsageModel: ObservableObject {
             self.text = baseText + indicator
         }
 
-        var tooltipStr = "Claude Code Usage"
+        var tooltipStr = Self.providerLabel(provider: self.provider, tokenSource: payload.meta?.tokenSource ?? "")
         tooltipStr += "\n───────────────"
         tooltipStr += "\n5-hour:  \(fiveInt)%"
         if let fiveLong = Self.formatDurationLong(payload.five_hour?.resets_at, now: now), !fiveLong.isEmpty {
@@ -294,6 +294,24 @@ final class UsageModel: ObservableObject {
         case "codex": return "◆"
         case "unknown": return "?"
         default: return ""
+        }
+    }
+
+    static func providerLabel(provider: String, tokenSource: String) -> String {
+        switch provider {
+        case "codex": return "Codex Usage"
+        case "zai": return "Z.ai Usage"
+        case "minimax": return "MiniMax Usage"
+        case "openrouter": return "OpenRouter Usage"
+        case "komilion": return "Komilion Usage"
+        case "packy": return "Packy Usage"
+        default:
+            if tokenSource.hasPrefix("claude-settings:") {
+                let name = String(tokenSource.dropFirst("claude-settings:".count))
+                return "Claude (\(name)) Usage"
+            }
+            if tokenSource == "opencode" { return "OpenCode Usage" }
+            return "Claude Code Usage"
         }
     }
 

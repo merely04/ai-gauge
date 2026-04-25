@@ -118,7 +118,19 @@ describe('cache invalidation flow', () => {
     ws.send(JSON.stringify({ type: 'refresh' }));
 
     await new Promise((resolve) => setTimeout(resolve, 400));
-    expect(usageMessages.length).toBe(0);
+
+    const staleBroadcasts = usageMessages.filter(
+      (m) => m?.five_hour?.utilization === 15
+    );
+    expect(staleBroadcasts.length).toBe(0);
+
+    for (const msg of usageMessages) {
+      if (msg.five_hour !== null && msg.five_hour !== undefined) {
+        throw new Error(
+          `expected only empty-state or no broadcasts, got: ${JSON.stringify(msg)}`
+        );
+      }
+    }
 
     try { ws.close(); } catch {}
   }, 15000);

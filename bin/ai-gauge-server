@@ -282,7 +282,23 @@ async function fetchAndHandleBroadcast() {
       await thresholdNotifier.check(cachedData);
     } else {
       currentInterval = BACKOFF_INTERVAL;
-      if (cachedData) broadcast(cachedData);
+      if (cachedData) {
+        broadcast(cachedData);
+      } else {
+        broadcast({
+          five_hour: null,
+          seven_day: null,
+          seven_day_sonnet: null,
+          seven_day_opus: null,
+          code_review: null,
+          extra_usage: null,
+          seven_day_oauth_apps: null,
+          seven_day_cowork: null,
+          seven_day_omelette: null,
+          balance: null,
+          meta: buildMeta(config, { provider: creds?.provider ?? 'unknown' }),
+        });
+      }
     }
     return success;
   })();
@@ -349,6 +365,9 @@ async function handleSetConfig(cmd) {
 
     if (key === 'tokenSource') {
       cachedData = null;
+      fetchAndHandleBroadcast().catch((err) => {
+        logError(`[setConfig] post-switch fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
     } else if (cachedData) {
       cachedData = {
         ...cachedData,
