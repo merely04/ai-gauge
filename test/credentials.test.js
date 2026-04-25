@@ -348,4 +348,30 @@ describe('parseCodexIdToken', () => {
     expect(result.exp).toBeNull();
     expect(result.plan_type).toBe('unknown');
   });
+
+  it('rejects JWT larger than 16KB (DoS guard)', () => {
+    const huge = 'a'.repeat(17 * 1024);
+    const result = parseCodexIdToken(`${huge}.${huge}.${huge}`);
+    expect(result.exp).toBeNull();
+    expect(result.plan_type).toBe('unknown');
+  });
+
+  it('rejects JWT with payload segment larger than 8KB', () => {
+    const header = 'eyJhbGciOiJSUzI1NiJ9';
+    const huge = Buffer.from(JSON.stringify({ data: 'x'.repeat(9 * 1024) })).toString('base64url');
+    const result = parseCodexIdToken(`${header}.${huge}.sig`);
+    expect(result.exp).toBeNull();
+    expect(result.plan_type).toBe('unknown');
+  });
+
+  it('handles malicious OPENAI_AUTH_CLAIM as array (not object)', () => {
+    const payload = Buffer.from(JSON.stringify({
+      exp: 9999999999,
+      'https://api.openai.com/auth': ['plus'],
+    })).toString('base64url');
+    const jwt = `eyJhbGciOiJSUzI1NiJ9.${payload}.sig`;
+    const result = parseCodexIdToken(jwt);
+    expect(result.exp).toBe(9999999999);
+    expect(result.plan_type).toBe('unknown');
+  });
 });
