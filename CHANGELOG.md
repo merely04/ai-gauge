@@ -11,17 +11,22 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - Codex (ChatGPT Plus/Pro/Business/Enterprise/Edu) usage monitoring via new `tokenSource: "codex"` — reads `~/.codex/auth.json`, fetches `chatgpt.com/backend-api/wham/usage`
-- JSONL session fallback for Codex when HTTP endpoint is unreachable (parses `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`)
+- JSONL session fallback for Codex when HTTP endpoint is unreachable (parses `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`); also kicks in when `~/.codex/auth.json` is missing but recent sessions are on disk
 - Plan values `plus`, `business`, `edu` for Codex subscription tiers
 - Top-level broadcast field `code_review` (Codex code review rate limit window)
+- Top-level broadcast field `secondary` — when `tokenSource: "opencode"` and the OpenCode auth.json carries both an Anthropic AND an OpenAI OAuth block, the daemon fetches both providers in parallel and the menubar/waybar tooltip shows Claude AND Codex usage in a single view
 - "Codex" entry in macOS menubar "Change token source" submenu
 - `chatgpt.com` added to SSRF known-provider host allowlist
+- Optimistic UI for menubar token-source switching: checkmark and tooltip update immediately, server force-refetches with the new credentials, in-flight HTTP fetches are aborted via `AbortController` to prevent stale-broadcast races
 
 ### Changed
-- WebSocket `protocolVersion` bumped from `2` → `3` (additive — v2 clients ignore the new `code_review` field)
+- WebSocket `protocolVersion` bumped from `2` → `4` (additive — v2/v3 clients ignore the new `code_review` and `secondary` fields)
+- Codex JSONL fallback narrowed to HTTP 401/403/5xx and network errors only (404/429 do NOT trigger fallback)
 
 ### Security
 - `account_id` and `refresh_token` now redacted (`***`) in daemon structured logs via `lib/log-safe.js`
+- Codex JSONL walker rejects symlinks at every directory level (`lstat`-based) to prevent reading arbitrary user-readable files via a malicious symlinked `~/.codex/sessions`
+- JWT parser hardened with 16KB total / 8KB payload size limits and defensive type checks on the `https://api.openai.com/auth` claim
 
 ## [1.3.0] — 2026-04-21
 
