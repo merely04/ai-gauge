@@ -1,8 +1,12 @@
 import { describe, it, expect, afterEach } from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { readClaudeCodeCredentials, readOpenCodeCredentials } from '../lib/credentials.js';
+import { readClaudeCodeCredentials, readOpenCodeCredentials, getKeychainServiceName } from '../lib/credentials.js';
 import { readCodexCredentials, parseCodexIdToken } from '../lib/credentials-codex.js';
+
+function fileOnly(credsPath) {
+  return { credsFile: credsPath, platform: 'linux' };
+}
 
 // Helper to create temp directory for test fixtures
 function createTempDir() {
@@ -44,7 +48,7 @@ describe('Credential Reading', () => {
 
     writeFileSync(credsPath, JSON.stringify(credsData));
 
-    const result = await readClaudeCodeCredentials(credsPath);
+    const result = await readClaudeCodeCredentials(fileOnly(credsPath));
 
     expect(result).not.toBeNull();
     expect(result.token).toBe('test-token-claude-12345');
@@ -123,10 +127,8 @@ describe('Credential Reading', () => {
 
     writeFileSync(credsPath, JSON.stringify(credsData));
 
-    const result = await readClaudeCodeCredentials(credsPath);
+    const result = await readClaudeCodeCredentials(fileOnly(credsPath));
 
-    // The function returns the data regardless of expiration
-    // Expiration check is done elsewhere (isTokenValid)
     expect(result).not.toBeNull();
     expect(result.expiresAt).toBeLessThan(Date.now());
   });
@@ -146,7 +148,7 @@ describe('Credential Reading', () => {
 
     writeFileSync(credsPath, JSON.stringify(credsData));
 
-    const result = await readClaudeCodeCredentials(credsPath);
+    const result = await readClaudeCodeCredentials(fileOnly(credsPath));
 
     expect(result).toBeNull();
   });
@@ -178,7 +180,7 @@ describe('Credential Reading', () => {
 
     writeFileSync(credsPath, 'not valid json {]');
 
-    const result = await readClaudeCodeCredentials(credsPath);
+    const result = await readClaudeCodeCredentials(fileOnly(credsPath));
 
     expect(result).toBeNull();
   });
@@ -268,6 +270,241 @@ describe('Credential Reading', () => {
     const result = await readOpenCodeCredentials(primaryPath, macPath);
     expect(result).not.toBeNull();
     expect(result.secondary).toBeNull();
+  });
+});
+
+describe('readClaudeCodeCredentials — macOS Keychain', () => {
+  let tempDir;
+
+  afterEach(() => {
+    if (tempDir) {
+      try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
+      tempDir = undefined;
+    }
+  });
+
+  function spawnReturning({ stdout = '', stderr = '', exitCode = 0 } = {}) {
+    return async () => ({ stdout, stderr, exitCode });
+  }
+
+  function spawnThrowing(message = 'spawn failed') {
+    return async () => { throw new Error(message); };
+  }
+
+  it('reads OAuth credentials from Keychain when payload is wrapped in claudeAiOauth', async () => {
+    const expiresAt = Date.now() + 3600000;
+    const stdout = JSON.stringify({
+      claudeAiOauth: {
+        accessToken: 'kc-access-token',
+        expiresAt,
+        subscriptionType: 'max',
+      },
+    });
+
+    const result = await readClaudeCodeCredentials({
+      platform: 'darwin',
+      spawnImpl: spawnReturning({ stdout }),
+      credsFile: '/nonexistent/path',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.token).toBe('kc-access-token');
+    expect(result.expiresAt).toBe(expiresAt);
+    expect(result.subscriptionType).toBe('max');
+  });
+
+  it('reads flat OAuth payload (no claudeAiOauth wrapper) from Keychain', async () => {
+    const stdout = JSON.stringify({
+      accessToken: 'flat-token',
+      expiresAt: Date.now() + 1000,
+      subscriptionType: 'pro',
+    });
+
+    const result = await readClaudeCodeCredentials({
+      platform: 'darwin',
+      spawnImpl: spawnReturning({ stdout }),
+      credsFile: '/nonexistent/path',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.token).toBe('flat-token');
+    expect(result.subscriptionType).toBe('pro');
+  });
+
+  it('falls back to legacy file when Keychain item not found (exit 44)', async () => {
+    tempDir = createTempDir();
+    const credsPath = join(tempDir, '.claude', '.credentials.json');
+    ensureDir(join(tempDir, '.claude'));
+    writeFileSync(credsPath, JSON.stringify({
+      claudeAiOauth: {
+        accessToken: 'file-fallback-token',
+        expiresAt: Date.now() + 3600000,
+        subscriptionType: 'pro',
+      },
+    }));
+
+    const result = await readClaudeCodeCredentials({
+      platform: 'darwin',
+      spawnImpl: spawnReturning({
+        exitCode: 44,
+        stderr: 'security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.',
+      }),
+      credsFile: credsPath,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.token).toBe('file-fallback-token');
+  });
+
+  it('falls back to legacy file on SSH/headless "User interaction is not allowed" error', async () => {
+    tempDir = createTempDir();
+    const credsPath = join(tempDir, '.claude', '.credentials.json');
+    ensureDir(join(tempDir, '.claude'));
+    writeFileSync(credsPath, JSON.stringify({
+      claudeAiOauth: { accessToken: 'ssh-fallback', expiresAt: Date.now() + 1000, subscriptionType: 'pro' },
+    }));
+
+    const result = await readClaudeCodeCredentials({
+      platform: 'darwin',
+      spawnImpl: spawnReturning({
+        exitCode: 36,
+        stderr: 'security: SecKeychainItemCopyContent: User interaction is not allowed.',
+      }),
+      credsFile: credsPath,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.token).toBe('ssh-fallback');
+  });
+
+  it('falls back to file when Keychain payload is malformed JSON', async () => {
+    tempDir = createTempDir();
+    const credsPath = join(tempDir, '.claude', '.credentials.json');
+    ensureDir(join(tempDir, '.claude'));
+    writeFileSync(credsPath, JSON.stringify({
+      claudeAiOauth: { accessToken: 'file-when-kc-broken', expiresAt: Date.now() + 1000, subscriptionType: 'pro' },
+    }));
+
+    const result = await readClaudeCodeCredentials({
+      platform: 'darwin',
+      spawnImpl: spawnReturning({ stdout: 'not valid json {]' }),
+      credsFile: credsPath,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.token).toBe('file-when-kc-broken');
+  });
+
+  it('falls back to file when Keychain payload lacks accessToken', async () => {
+    tempDir = createTempDir();
+    const credsPath = join(tempDir, '.claude', '.credentials.json');
+    ensureDir(join(tempDir, '.claude'));
+    writeFileSync(credsPath, JSON.stringify({
+      claudeAiOauth: { accessToken: 'fb', expiresAt: Date.now() + 1000, subscriptionType: 'pro' },
+    }));
+
+    const result = await readClaudeCodeCredentials({
+      platform: 'darwin',
+      spawnImpl: spawnReturning({
+        stdout: JSON.stringify({ claudeAiOauth: { expiresAt: 0 } }),
+      }),
+      credsFile: credsPath,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.token).toBe('fb');
+  });
+
+  it('falls back to file when spawn itself throws (e.g. /usr/bin/security missing)', async () => {
+    tempDir = createTempDir();
+    const credsPath = join(tempDir, '.claude', '.credentials.json');
+    ensureDir(join(tempDir, '.claude'));
+    writeFileSync(credsPath, JSON.stringify({
+      claudeAiOauth: { accessToken: 'crash-fallback', expiresAt: Date.now() + 1000, subscriptionType: 'pro' },
+    }));
+
+    const result = await readClaudeCodeCredentials({
+      platform: 'darwin',
+      spawnImpl: spawnThrowing('ENOENT'),
+      credsFile: credsPath,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.token).toBe('crash-fallback');
+  });
+
+  it('returns null when both Keychain and file are unavailable', async () => {
+    const result = await readClaudeCodeCredentials({
+      platform: 'darwin',
+      spawnImpl: spawnReturning({ exitCode: 44, stderr: 'item not found' }),
+      credsFile: '/nonexistent/path',
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('does NOT spawn security on Linux platform', async () => {
+    tempDir = createTempDir();
+    const credsPath = join(tempDir, '.claude', '.credentials.json');
+    ensureDir(join(tempDir, '.claude'));
+    writeFileSync(credsPath, JSON.stringify({
+      claudeAiOauth: { accessToken: 'linux-token', expiresAt: Date.now() + 1000, subscriptionType: 'pro' },
+    }));
+
+    let spawnCalled = false;
+    const spy = async () => { spawnCalled = true; return { stdout: '', stderr: '', exitCode: 0 }; };
+
+    const result = await readClaudeCodeCredentials({
+      platform: 'linux',
+      spawnImpl: spy,
+      credsFile: credsPath,
+    });
+
+    expect(spawnCalled).toBe(false);
+    expect(result.token).toBe('linux-token');
+  });
+
+  it('Keychain takes priority over file when both have credentials', async () => {
+    tempDir = createTempDir();
+    const credsPath = join(tempDir, '.claude', '.credentials.json');
+    ensureDir(join(tempDir, '.claude'));
+    writeFileSync(credsPath, JSON.stringify({
+      claudeAiOauth: { accessToken: 'file-loser', expiresAt: 1, subscriptionType: 'pro' },
+    }));
+
+    const result = await readClaudeCodeCredentials({
+      platform: 'darwin',
+      spawnImpl: spawnReturning({
+        stdout: JSON.stringify({ claudeAiOauth: { accessToken: 'kc-winner', expiresAt: 2, subscriptionType: 'max' } }),
+      }),
+      credsFile: credsPath,
+    });
+
+    expect(result.token).toBe('kc-winner');
+    expect(result.subscriptionType).toBe('max');
+  });
+});
+
+describe('getKeychainServiceName', () => {
+  it('returns default service name when CLAUDE_CONFIG_DIR is not set', () => {
+    expect(getKeychainServiceName({})).toBe('Claude Code-credentials');
+  });
+
+  it('returns sha256-suffixed name when CLAUDE_CONFIG_DIR is set (matches Claude Code pattern)', () => {
+    const name = getKeychainServiceName({ CLAUDE_CONFIG_DIR: '/custom/dir' });
+    expect(name).toMatch(/^Claude Code-credentials-[0-9a-f]{8}$/);
+  });
+
+  it('produces stable hash for same CLAUDE_CONFIG_DIR (used for re-finding existing entries)', () => {
+    const a = getKeychainServiceName({ CLAUDE_CONFIG_DIR: '~/work-profile' });
+    const b = getKeychainServiceName({ CLAUDE_CONFIG_DIR: '~/work-profile' });
+    expect(a).toBe(b);
+  });
+
+  it('produces different hash for different CLAUDE_CONFIG_DIR', () => {
+    const a = getKeychainServiceName({ CLAUDE_CONFIG_DIR: '/dir/a' });
+    const b = getKeychainServiceName({ CLAUDE_CONFIG_DIR: '/dir/b' });
+    expect(a).not.toBe(b);
   });
 });
 

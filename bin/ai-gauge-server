@@ -41,6 +41,7 @@ let currentInterval = POLL_INTERVAL;
 let server;
 let fetchInFlight = null;
 let _fetchImpl = null;
+let _readCredentialsImpl = null;
 let fetchGeneration = 0;
 let currentAbortController = null;
 
@@ -176,11 +177,19 @@ export function setFetchImpl(fn) {
   _fetchImpl = fn;
 }
 
+export function setReadCredentialsImpl(fn) {
+  _readCredentialsImpl = fn;
+}
+
 function doFetch(url, opts) {
   return (_fetchImpl ?? globalThis.fetch)(url, opts);
 }
 
-async function fetchUsage(creds, config, { generation, signal } = {}) {
+function rereadCredentials(config) {
+  return (_readCredentialsImpl ?? readCredentials)(config);
+}
+
+async function fetchUsage(creds, config, { generation, signal, _retriedAfterAuth = false } = {}) {
   if (!creds || !creds.token) {
     if (config?.tokenSource === 'codex') {
       return await tryCodexJsonlFallback(
@@ -249,11 +258,20 @@ async function fetchUsage(creds, config, { generation, signal } = {}) {
 
     const parsed = adapter.parseResponse(json, res.status);
     if (parsed.error) {
+      const status = parsed.error.status;
+      const isAuthError = status === 401 || status === 403;
+      if (isAuthError && !_retriedAfterAuth && providerName === 'anthropic' && creds.tokenSource && !creds.baseUrl) {
+        const fresh = await rereadCredentials(effectiveConfig);
+        if (fresh?.token && fresh.token !== creds.token) {
+          logJson(console.warn, 'token_rotation_retry', { provider: providerName, status });
+          return await fetchUsage(fresh, effectiveConfig, { generation, signal, _retriedAfterAuth: true });
+        }
+      }
       logJson(console.warn, 'provider_error', {
         provider: providerName,
         ...sanitizeError(new Error(parsed.error.reason ?? 'unknown')),
       });
-      if (creds.provider === 'codex' && shouldCodexFallbackOnStatus(parsed.error.status)) {
+      if (creds.provider === 'codex' && shouldCodexFallbackOnStatus(status)) {
         return await tryCodexJsonlFallback(creds, effectiveConfig, { generation });
       }
       return false;

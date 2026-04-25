@@ -13,6 +13,8 @@ Before proceeding, verify:
 - An OAuth token source is available — one of:
   - Claude Code CLI authenticated via OAuth (`~/.claude/.credentials.json` with `claudeAiOauth.accessToken`)
   - OpenCode authenticated with Anthropic (`~/.local/share/opencode/auth.json` with `anthropic.access`)
+  - Codex CLI authenticated (`~/.codex/auth.json` with `tokens.access_token` + `tokens.account_id`)
+  - Custom Anthropic-compatible provider via `~/.claude/settings.<name>.json` (Z.ai, MiniMax, OpenRouter, Komilion, Packy)
 
 ### macOS
 
@@ -20,16 +22,18 @@ Before proceeding, verify:
 - macOS 13 Ventura or later
 - `bun` is installed — via [bun.sh](https://bun.sh) (`curl -fsSL https://bun.sh/install | bash`) or Homebrew (`brew install bun`)
 - `jq` is available — `brew install jq` or `sudo port install jq`
-- An OAuth token source is available — same options as Linux above
+- An OAuth token source is available — same options as Linux above (on macOS, Claude Code CLI v2.0.14+ stores credentials in **Keychain** under service `Claude Code-credentials`; ai-gauge reads them via `/usr/bin/security` automatically and falls back to the legacy `~/.claude/.credentials.json` path for SSH/headless sessions)
 
-## Install
+## Install (npm package — only supported install path)
 
 ```bash
 bun add -g ai-gauge
 ai-gauge setup
 ```
 
-The setup command:
+**Do not** install ai-gauge by downloading `AIGauge.app` from GitHub Releases. The `.app` is a UI client only; without the npm-installed `ai-gauge-server` daemon it has nothing to display. As of v1.4.2, GitHub Releases only carry release notes — no `.app`/binary attachments.
+
+On **Linux**, `ai-gauge setup`:
 1. Resolves `bun` path and installs `ai-gauge-server` as a systemd user service
 2. Starts the WebSocket server (`ws://localhost:19876`)
 3. Installs StreamDock plugin if Wine + StreamDock are present
@@ -40,19 +44,24 @@ The setup command:
 
 If the user's waybar config does not have `modules-center` or uses a different module layout, you may need to manually adjust placement in `config.jsonc` after install.
 
+On **macOS**, `ai-gauge setup` installs two LaunchAgents (server + menubar) and the SwiftUI MenuBarExtra app — see the **macOS Installation** section below for details.
+
 ## Configure Token Source
 
-Default is `claude-code`. If the user has OpenCode but not Claude Code CLI, switch immediately after install:
+Default is `claude-code`. If the user does not use Claude Code CLI, switch immediately after install:
 
 ```bash
-ai-gauge-config set tokenSource opencode
-ai-gauge-config set plan max
+ai-gauge-config set tokenSource opencode      # or codex, or claude-settings:<name>
+ai-gauge-config set plan max                  # max | pro | team | enterprise | unknown
+                                              # (or plus | pro | business | enterprise | edu for codex)
 ```
 
-| tokenSource | Credential file | When to use |
-|-------------|----------------|-------------|
-| `claude-code` | `~/.claude/.credentials.json` | Claude Code CLI is installed and authenticated |
-| `opencode` | `~/.local/share/opencode/auth.json` | OpenCode is the primary tool |
+| tokenSource | Credential location | When to use |
+|-------------|---------------------|-------------|
+| `claude-code` | macOS: Keychain `Claude Code-credentials` (Claude Code v2.0.14+) → fallback `~/.claude/.credentials.json`<br>Linux: `~/.claude/.credentials.json` only | Claude Code CLI is installed and authenticated |
+| `opencode` | `~/.local/share/opencode/auth.json` (Linux primary) or `~/Library/Application Support/opencode/auth.json` (macOS fallback) | OpenCode is the primary tool. If the same file also has an `openai` OAuth block, ai-gauge fetches Codex usage in parallel and shows both providers in the tooltip |
+| `codex` | `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`) — must be `cli_auth_credentials_store: "file"` mode (default), Keychain mode is not supported | ChatGPT Plus/Pro/Business/Enterprise/Edu subscriber using Codex CLI |
+| `claude-settings:<name>` | `~/.claude/settings.<name>.json` with `env.ANTHROPIC_BASE_URL` + `env.ANTHROPIC_AUTH_TOKEN` | Custom Anthropic-compatible provider (Z.ai, MiniMax, OpenRouter, Komilion). Plain `sk-ant-*` API keys cannot fetch usage — only OAuth-bearing providers work |
 
 The server restarts automatically after `ai-gauge-config set`.
 
@@ -82,9 +91,10 @@ Common issues an LLM agent might encounter:
 
 - **`bun: command not found`** — install bun: `curl -fsSL https://bun.sh/install | bash`, then re-run `ai-gauge setup`
 - **`jq: command not found`** — install jq: `sudo pacman -S jq` (Arch) or `sudo apt install jq` (Debian/Ubuntu)
-- **Service starts but no data** — token is expired. Check `journalctl --user -u ai-gauge-server -n 5` for "token expired". The source CLI needs to refresh it (open Claude Code or OpenCode)
-- **Waybar shows `✦ ···` permanently** — server has no data to send. Check service status and token validity
-- **Module not visible in waybar** — config.jsonc may not have `modules-center`. Add `"custom/ai-gauge"` to whichever module array is used
+- **`credentials_missing` event in logs** — the token source's credential file/Keychain entry is absent. For `claude-code` on macOS, run `claude /login` to populate the Keychain (Claude Code v2.0.14+ no longer writes `~/.claude/.credentials.json`). For `opencode`/`codex`, ensure the respective CLI is logged in.
+- **Service starts but no data, log shows `token_expired`** — check `journalctl --user -u ai-gauge-server -n 5`. The source CLI needs to refresh it (open Claude Code or OpenCode). Note: `fetchUsage` automatically retries once on HTTP 401/403 by re-reading credentials, so this only persists when the source CLI itself has not refreshed the token.
+- **Waybar shows `✦ ···` permanently** — server has no data to send. Check service status and token validity.
+- **Module not visible in waybar** — config.jsonc may not have `modules-center`. Add `"custom/ai-gauge"` to whichever module array is used.
 
 ---
 
@@ -114,12 +124,14 @@ The icon shows `✦ ···` while connecting, then switches to `✦ <percent>% <
 
 ### Configure Token Source
 
-Same as Linux — default is `claude-code`. Switch to OpenCode if needed:
+Same as Linux — see the **Configure Token Source** section above for the full table of options (`claude-code`, `opencode`, `codex`, `claude-settings:<name>`).
 
 ```bash
-ai-gauge-config set tokenSource opencode
+ai-gauge-config set tokenSource opencode      # or codex, or claude-settings:<name>
 ai-gauge-config set plan max
 ```
+
+**macOS note for `claude-code`**: Claude Code CLI v2.0.14+ stores OAuth tokens in **Keychain** (service `Claude Code-credentials`) instead of `~/.claude/.credentials.json`. ai-gauge reads via `/usr/bin/security find-generic-password` automatically — no extra setup. If a user reports `credentials_missing` in logs after migrating to a new Claude Code version, instruct them to run `claude /login` to repopulate the Keychain entry. Auto-update of Claude Code can also break the Keychain ACL — re-login fixes it.
 
 ### Check Status
 
@@ -133,15 +145,19 @@ Both should show `state = running`. If either shows `state = waiting` or an erro
 
 ### Logs
 
+The daemon writes structured JSON to **stderr**, which launchd routes to `*.err` files. The `*.log` files (stdout) are almost always empty — always read `.err` for actual events.
+
 ```bash
-tail -f ~/Library/Logs/ai-gauge/*.log
+tail -f ~/Library/Logs/ai-gauge/server.err     # daemon: fetches, credential reads, errors
+tail -f ~/Library/Logs/ai-gauge/menubar.err    # Swift app: WS connect/disconnect/messages
 ```
 
-Or check a specific agent:
+Useful greps:
 
 ```bash
-tail -f ~/Library/Logs/ai-gauge/server.log
-tail -f ~/Library/Logs/ai-gauge/menubar.log
+grep credentials_missing ~/Library/Logs/ai-gauge/server.err  # token source has no creds
+grep token_rotation_retry ~/Library/Logs/ai-gauge/server.err # 401 retry kicked in (Keychain rotation)
+grep '\[setConfig\]' ~/Library/Logs/ai-gauge/server.err      # config mutations from menubar
 ```
 
 ### Gatekeeper Troubleshooting
@@ -181,9 +197,13 @@ This unloads and removes both LaunchAgent plists, cleans config/CSS, and removes
 - **`bun: command not found`** — install bun: `curl -fsSL https://bun.sh/install | bash`, then open a new shell and re-run `ai-gauge setup`
 - **`jq: command not found`** — `brew install jq` or `sudo port install jq`
 - **Menubar icon never appears** — check `launchctl print gui/$(id -u)/com.ai-gauge.menubar` for errors; Gatekeeper may be blocking the binary (see Gatekeeper section above)
-- **Icon stuck at `✦ ···`** — server agent may not be running. Check `launchctl print gui/$(id -u)/com.ai-gauge.server` and `tail ~/Library/Logs/ai-gauge/server.log`
-- **Token expired** — open Claude Code or OpenCode to refresh the OAuth token, then wait up to 60 seconds for the next poll
-- **Runtime state location** — macOS uses `$TMPDIR/ai-gauge/usage.json` (not `$XDG_RUNTIME_DIR`)
+- **Tooltip says "ai-gauge daemon not running — install via `bun add -g ai-gauge`"** — the menubar app could not reach `ws://localhost:19876` for 7+ seconds after launch. Most common cause: user downloaded the standalone `.app` from somewhere (or copied an old one) without ever running `ai-gauge setup`. Run `bun add -g ai-gauge && ai-gauge setup`. If the npm package is already installed, the daemon LaunchAgent may have failed to load — check `launchctl print gui/$(id -u)/com.ai-gauge.server` and `tail ~/Library/Logs/ai-gauge/server.err`.
+- **Icon stuck at `✦ ···` (but no "daemon not running" tooltip)** — daemon is running but cannot fetch usage. Check `launchctl print gui/$(id -u)/com.ai-gauge.server` and `tail ~/Library/Logs/ai-gauge/server.err`. Look for `credentials_missing` or `token_expired` events.
+- **`credentials_missing` for `tokenSource: claude-code` after Claude Code update** — Claude Code v2.0.14+ moved tokens into Keychain. Auto-update may break the Keychain ACL, requiring re-login: run `claude /login` and the daemon will pick up the new Keychain entry on the next poll (within 60s).
+- **Tooltip flickers between "Switching…" and real data on token-source switch** — fixed in v1.4.1 with optimistic-UI watchdog and `configError` handling. Upgrade if seeing this on older versions.
+- **Token expired** — open Claude Code or OpenCode to refresh the OAuth token. The daemon retries once on 401 with a fresh credential read, so as soon as the source CLI rotates the token it gets picked up automatically.
+- **Runtime state location** — macOS uses `$TMPDIR/ai-gauge/usage.json` (not `$XDG_RUNTIME_DIR`).
+- **Quick daemon restart** — `launchctl kickstart -k gui/$(id -u)/com.ai-gauge.server`. For menubar app: `launchctl kickstart -k gui/$(id -u)/com.ai-gauge.menubar`.
 
 ### Security Posture on macOS (for LLM agents to understand)
 

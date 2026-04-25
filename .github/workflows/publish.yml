@@ -83,21 +83,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download macOS binary
-        uses: actions/download-artifact@v4
-        with:
-          name: ai-gauge-menubar
-          path: bin/
-
-      - name: Restore executable bit on macOS binary
-        run: |
-          chmod +x bin/ai-gauge-menubar
-          chmod +x bin/AIGauge.app/Contents/MacOS/AIGauge
-
-      - name: Tar .app bundle for release asset
-        run: |
-          cd bin && tar -czf AIGauge.app.tar.gz AIGauge.app
-
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -113,6 +98,7 @@ jobs:
             }
             found { print }
           ' CHANGELOG.md)
+          INSTALL_FOOTER=$'\n\n---\n\n## Installation\n\nai-gauge is distributed via npm only — the macOS `.app` bundle is a UI client and requires the daemon (`ai-gauge-server`) shipped inside the npm package.\n\n```bash\nbun add -g ai-gauge\nai-gauge setup\n```\n\nSee the [README](https://github.com/'"$GITHUB_REPOSITORY"'#install) for full instructions.'
           if [ -z "$BODY" ]; then
             echo "::warning::No CHANGELOG entry for v$VERSION — using auto-generated notes"
             if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
@@ -121,12 +107,11 @@ jobs:
             fi
             gh release create "$GITHUB_REF_NAME" \
               --generate-notes \
-              --title "$GITHUB_REF_NAME" \
-              bin/ai-gauge-menubar \
-              bin/AIGauge.app.tar.gz
+              --title "$GITHUB_REF_NAME"
+            gh release edit "$GITHUB_REF_NAME" --notes "$(gh release view "$GITHUB_REF_NAME" --json body -q .body)$INSTALL_FOOTER" || true
             exit 0
           fi
-          printf '%s\n' "$BODY" > /tmp/release-notes.md
+          printf '%s' "$BODY" > /tmp/release-notes.md
           PREV_TAG=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
             {
@@ -135,12 +120,11 @@ jobs:
                 "$GITHUB_REPOSITORY" "$PREV_TAG" "$GITHUB_REF_NAME"
             } >> /tmp/release-notes.md
           fi
+          printf '%s' "$INSTALL_FOOTER" >> /tmp/release-notes.md
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "::warning::Release $GITHUB_REF_NAME already exists — deleting and recreating"
             gh release delete "$GITHUB_REF_NAME" --yes --cleanup-tag=false
           fi
           gh release create "$GITHUB_REF_NAME" \
             --notes-file /tmp/release-notes.md \
-            --title "$GITHUB_REF_NAME" \
-            bin/ai-gauge-menubar \
-            bin/AIGauge.app.tar.gz
+            --title "$GITHUB_REF_NAME"

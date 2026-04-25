@@ -63,6 +63,11 @@ struct AIGaugeApp: App {
                 usage?.handleConfigError(payload)
             }
         }
+        ws.onDaemonUnreachable = { [weak usage] in
+            Task { @MainActor in
+                usage?.markDaemonUnreachable()
+            }
+        }
         ws.onConnect = { [weak ws] in
             ws?.requestSettingsFiles()
         }

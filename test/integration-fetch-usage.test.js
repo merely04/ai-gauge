@@ -8,15 +8,18 @@ const codexSessionFixture = readFileSync(join(import.meta.dir, 'fixtures/provide
 
 let fetchUsage;
 let setFetchImpl;
+let setReadCredentialsImpl;
 
 beforeAll(async () => {
   const serverModule = await import('../bin/ai-gauge-server');
   fetchUsage = serverModule.fetchUsage;
   setFetchImpl = serverModule.setFetchImpl;
+  setReadCredentialsImpl = serverModule.setReadCredentialsImpl;
 });
 
 afterEach(() => {
   setFetchImpl(null);
+  setReadCredentialsImpl(null);
 });
 
 describe('fetchUsage integration', () => {
@@ -88,6 +91,130 @@ describe('fetchUsage integration', () => {
 
     expect(result).toBe(false);
     expect(called).toBe(true);
+  });
+});
+
+describe('fetchUsage — token rotation retry on 401', () => {
+  const anthropicHappy = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/anthropic-happy.json'), 'utf8'));
+
+  it('on 401, re-reads credentials and retries with rotated token', async () => {
+    const tokensSeen = [];
+    setFetchImpl(async (url, opts) => {
+      const auth = (opts.headers?.Authorization ?? opts.headers?.authorization ?? '').toString();
+      tokensSeen.push(auth);
+      if (auth.includes('STALE')) {
+        return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 });
+      }
+      return new Response(JSON.stringify(anthropicHappy), { status: 200 });
+    });
+
+    setReadCredentialsImpl(async () => ({
+      token: 'FRESH-TOKEN-FROM-KEYCHAIN',
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'claude-code',
+      subscriptionType: 'pro',
+      baseUrl: null,
+    }));
+
+    const result = await fetchUsage({
+      token: 'STALE-TOKEN',
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'claude-code',
+      baseUrl: null,
+      subscriptionType: 'pro',
+    });
+
+    expect(result).toBe(true);
+    expect(tokensSeen.length).toBe(2);
+    expect(tokensSeen[0]).toContain('STALE');
+    expect(tokensSeen[1]).toContain('FRESH-TOKEN-FROM-KEYCHAIN');
+  });
+
+  it('on 401, does NOT retry when re-read returns the same (still stale) token', async () => {
+    let calls = 0;
+    setFetchImpl(async () => {
+      calls++;
+      return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 });
+    });
+
+    setReadCredentialsImpl(async () => ({
+      token: 'STILL-STALE',
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'claude-code',
+      subscriptionType: 'pro',
+      baseUrl: null,
+    }));
+
+    const result = await fetchUsage({
+      token: 'STILL-STALE',
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'claude-code',
+      baseUrl: null,
+      subscriptionType: 'pro',
+    });
+
+    expect(result).toBe(false);
+    expect(calls).toBe(1);
+  });
+
+  it('on 401, retries at most ONCE even if rotated token also returns 401', async () => {
+    let calls = 0;
+    setFetchImpl(async () => {
+      calls++;
+      return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 });
+    });
+
+    setReadCredentialsImpl(async () => ({
+      token: `ROTATED-${Math.random()}`,
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'claude-code',
+      subscriptionType: 'pro',
+      baseUrl: null,
+    }));
+
+    const result = await fetchUsage({
+      token: 'INITIAL',
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'claude-code',
+      baseUrl: null,
+      subscriptionType: 'pro',
+    });
+
+    expect(result).toBe(false);
+    expect(calls).toBe(2);
+  });
+
+  it('does NOT retry on 401 for custom claude-settings providers (baseUrl set)', async () => {
+    let calls = 0;
+    setFetchImpl(async () => {
+      calls++;
+      return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 });
+    });
+
+    let rereadCalled = false;
+    setReadCredentialsImpl(async () => {
+      rereadCalled = true;
+      return null;
+    });
+
+    const result = await fetchUsage({
+      token: 'CUSTOM',
+      expiresAt: null,
+      provider: 'zai',
+      tokenSource: 'claude-settings:zai',
+      baseUrl: 'https://api.z.ai/api/anthropic',
+      subscriptionType: 'unknown',
+    });
+
+    expect(result).toBe(false);
+    expect(calls).toBe(1);
+    expect(rereadCalled).toBe(false);
   });
 });
 

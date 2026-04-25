@@ -7,6 +7,20 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.2] — 2026-04-25
+
+### Fixed
+- **Claude Code credentials on macOS** — Anthropic moved OAuth tokens from `~/.claude/.credentials.json` to **macOS Keychain** (service `Claude Code-credentials`) starting in Claude Code v2.0.14+, which made `tokenSource: claude-code` silently fail with `credentials_missing` for every macOS user who re-logged in after the migration. `readClaudeCodeCredentials()` now tries Keychain first via `/usr/bin/security find-generic-password` (with a 3s timeout to avoid hanging the daemon poll loop), accepts both the legacy `{claudeAiOauth: {...}}` wrapper and the newer flat `{accessToken, ...}` shape, and falls back to the legacy file for Linux + macOS SSH/headless sessions where Keychain access is denied with "User interaction is not allowed". Honors `CLAUDE_CONFIG_DIR` via the same `Claude Code-credentials-{sha256(dir)[:8]}` service-name scheme Claude Code itself uses.
+- **Token rotation transparently handled**: `fetchUsage` now re-reads credentials once on HTTP 401/403 from the anthropic provider (only when `tokenSource` is set and `baseUrl` is not custom — i.e. claude-code/opencode flows) and retries with the fresh token if it differs. No proactive OAuth refresh — we let Claude Code itself rotate the token in Keychain/file and just pick up the new one. Other providers (codex JSONL fallback, claude-settings:* custom proxies) are unaffected.
+
+### Added
+- macOS menubar app now detects when the WebSocket server is unreachable for 7+ seconds after launch and shows clear install instructions in the tooltip ("ai-gauge daemon not running — install via `bun add -g ai-gauge && ai-gauge setup`") instead of staying in the indefinite "Connecting…" / "Waiting for data…" state. Solves the case where a user downloaded just the Swift `.app` and ran it without ever installing the npm package.
+- Test hook `setReadCredentialsImpl(fn)` mirroring `setFetchImpl(fn)` so integration tests can deterministically exercise the 401-rotation-retry path without touching real Keychain/files.
+
+### Changed
+- **GitHub Releases no longer ship `AIGauge.app.tar.gz` or `ai-gauge-menubar`**. The `.app` bundle is a UI client only — it requires the daemon shipped inside the npm package. Users who downloaded the standalone `.app` ended up with a stuck menubar because there was no `ws://localhost:19876` to connect to. Canonical install is now `bun add -g ai-gauge && ai-gauge setup` for both macOS and Linux. The Release body now ends with an Installation footer pointing back to the README so users who land on the Release page get redirected to the right install path.
+- 17 new tests covering Keychain happy path, legacy-vs-flat payload, exit-code-44 (item not found) → file fallback, "User interaction is not allowed" (SSH) → file fallback, malformed Keychain payload → file fallback, missing accessToken → file fallback, spawn ENOENT → file fallback, both unavailable → null, Linux platform skips spawn, Keychain priority over file, `CLAUDE_CONFIG_DIR`-derived service names (default + sha256-suffixed + stable hash + per-dir uniqueness), 401-rotation-retry happy path, no-retry when re-read returns same token, single-retry cap, and skip-retry for custom-baseUrl providers.
+
 ## [1.4.1] — 2026-04-25
 
 ### Fixed

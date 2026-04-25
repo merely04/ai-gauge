@@ -90,12 +90,17 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
     var onSettingsFiles: (([DiscoveredSource]) -> Void)?
     var onConfigError: ((ConfigErrorPayload) -> Void)?
     var onConnect: (() -> Void)?
+    var onDaemonUnreachable: (() -> Void)?
+
+    static let daemonUnreachableThresholdSeconds: Double = 7
 
     private let session: URLSession
     private let decoder = JSONDecoder()
     private var task: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var backoffDelay: TimeInterval = 1.0
+    private var hasConnectedOnce: Bool = false
+    private var unreachableWatchdog: Task<Void, Never>?
 
     init(session: URLSession = .shared) {
         self.session = session
@@ -111,6 +116,16 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
 
         receiveTask = Task { [weak self] in
             await self?.receiveLoop()
+        }
+
+        if !hasConnectedOnce && unreachableWatchdog == nil {
+            let threshold = Self.daemonUnreachableThresholdSeconds
+            unreachableWatchdog = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(threshold * 1_000_000_000))
+                if Task.isCancelled { return }
+                guard let self = self, !self.hasConnectedOnce else { return }
+                DispatchQueue.main.async { self.onDaemonUnreachable?() }
+            }
         }
     }
 
@@ -140,6 +155,9 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
             if !self.connected {
                 DispatchQueue.main.async { self.connected = true }
                 self.log("[ws] connected\n")
+                self.hasConnectedOnce = true
+                self.unreachableWatchdog?.cancel()
+                self.unreachableWatchdog = nil
                 DispatchQueue.main.async { self.onConnect?() }
             }
 

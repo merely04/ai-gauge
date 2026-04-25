@@ -59,6 +59,8 @@ bun remove -g ai-gauge
 
 **macOS**: requires [Bun](https://bun.sh) and macOS 13+. `ai-gauge setup` installs a native Swift menubar app and a launchd LaunchAgent instead of Waybar and systemd.
 
+> **Note**: GitHub Releases do not ship a standalone `.app` download. The macOS menubar app is a UI client only — it requires the `ai-gauge-server` daemon which lives inside the npm package and is configured by `ai-gauge setup`. Always install via `bun add -g ai-gauge`.
+
 ### macOS Gatekeeper — if the menubar icon doesn't appear
 
 The `.app` bundle is **ad-hoc signed** (not notarized with an Apple Developer ID). `ai-gauge setup` automatically runs `xattr -dr com.apple.quarantine` to let macOS launch it, but a few edge cases may still trigger "cannot verify developer":

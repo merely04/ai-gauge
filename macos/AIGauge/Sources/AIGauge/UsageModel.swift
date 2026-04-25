@@ -47,6 +47,7 @@ final class UsageModel: ObservableObject {
     @Published var protocolMismatch: Bool = false
 
     @Published var availableSources: [DiscoveredSource] = []
+    @Published var daemonReachable: Bool = true
 
     var _previousDaemonVersion: String? = nil
 
@@ -69,6 +70,7 @@ final class UsageModel: ObservableObject {
     /// Anthropic API broadcast into display-ready text/tooltip/urgency.
     func update(from payload: UsagePayload, now: Date = Date()) {
         cancelSwitchingWatchdog()
+        daemonReachable = true
 
         if let pv = payload.meta?.protocolVersion {
             self.protocolMismatch = pv > Self.SUPPORTED_PROTOCOL_VERSION
@@ -379,6 +381,27 @@ final class UsageModel: ObservableObject {
             if Task.isCancelled { return }
             self?.handleSwitchingTimeout(expected: value)
         }
+    }
+
+    func markDaemonUnreachable() {
+        daemonReachable = false
+        cancelSwitchingWatchdog()
+        text = "\(Self.spark) ⚠"
+        urgency = .warning
+        percentage = 0
+        tooltip = "ai-gauge daemon not running"
+            + "\n───────────────"
+            + "\nThe menubar app needs the ai-gauge"
+            + "\nbackground daemon to fetch usage."
+            + "\n───────────────"
+            + "\nInstall via:"
+            + "\n  bun add -g ai-gauge"
+            + "\n  ai-gauge setup"
+            + "\n───────────────"
+            + "\n(or start the daemon if it crashed:"
+            + "\n  launchctl kickstart -k"
+            + "\n  gui/$UID/com.ai-gauge.server)"
+        writeMenuStateSnapshot()
     }
 
     func handleConfigError(_ payload: ConfigErrorPayload) {

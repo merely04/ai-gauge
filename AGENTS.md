@@ -50,10 +50,11 @@ Key constants in `bin/ai-gauge-server` (change together if you touch the protoco
 - `POLL_INTERVAL = 60_000` — normal poll cadence.
 - `BACKOFF_INTERVAL = 300_000` — slower poll after a failed fetch.
 - `API_URL = 'https://api.anthropic.com/api/oauth/usage'` — undocumented Anthropic endpoint, OAuth-token-authenticated.
+- **Token rotation retry**: on HTTP `401`/`403` from the anthropic provider (only — not codex/zai/etc.) with a non-custom-baseUrl source, `fetchUsage` re-reads credentials once via `readCredentials` and retries with the fresh token if it differs from the original. Single retry, no recursion. This transparently handles Claude Code rotating the OAuth token between polls without us implementing OAuth refresh ourselves.
 
 Token sources (config `tokenSource` field):
 
-- `claude-code` (default): reads `~/.claude/.credentials.json` → `claudeAiOauth.accessToken` / `expiresAt`.
+- `claude-code` (default): on macOS reads from **Keychain** first (service name `Claude Code-credentials`, or `Claude Code-credentials-{sha256(CLAUDE_CONFIG_DIR)[:8]}` when `CLAUDE_CONFIG_DIR` is set — matches Claude Code's own scheme as of v2.0.14+). Falls back to `~/.claude/.credentials.json` on Keychain miss, "User interaction is not allowed" (SSH/headless sessions), spawn timeout (3s), or malformed payload. On Linux: file only. Both formats accepted: `{ claudeAiOauth: { accessToken, expiresAt, subscriptionType } }` (legacy nested) and flat `{ accessToken, expiresAt, refreshToken, subscriptionType }`.
 - `opencode`: reads `~/.local/share/opencode/auth.json` → `anthropic.access` / `anthropic.expires`. If the same file ALSO contains an `openai` block with `type: "oauth"`, `access`, and `accountId`, the daemon makes a parallel fetch to `https://chatgpt.com/backend-api/wham/usage` and broadcasts the result under the top-level `secondary` field (best-effort — primary broadcast still succeeds when secondary fails).
 - `codex`: reads `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`) → `tokens.access_token` / `tokens.account_id`. Fetches `https://chatgpt.com/backend-api/wham/usage` (undocumented endpoint; reverse-engineered, may change). Falls back to JSONL session parsing at `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` on HTTP 4xx/5xx or network failure.
 
@@ -393,6 +394,7 @@ Not npm packages — system binaries. None are declared anywhere; if you add a n
 - Trigger: `git tag vX.Y.Z && git push --tags`. CI is `.github/workflows/publish.yml`.
 - CI uses **Node 22 + `npm publish`** (not Bun) with `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`. This is fine because publishing is just tarball upload — the code still runs on Bun at the user's machine.
 - Published files (from `package.json` `files`): `bin/` (including the full `bin/AIGauge.app/**` bundle for macOS), `lib/`, both `*.plist.template` files, `README.md`, `docs/`. `assets/`, `macos/` sources, and `.sisyphus/` are excluded.
+- **GitHub Releases ship release notes only — no `.app`/binary attachments** (since v1.4.2). The macOS menubar app is a UI client only and is useless without the daemon shipped inside the npm package; attaching `AIGauge.app.tar.gz` to Releases caused users to drag it into `/Applications` and end up with a stuck menubar. The canonical install is `bun add -g ai-gauge && ai-gauge setup` for both macOS and Linux. The `create-github-release` job creates the Release with `gh release create` (no asset arguments) and appends an Installation footer pointing back to the README.
 - Bump `"version"` in `package.json` manually before tagging. The lib/streamdock-plugin/manifest.json `Version` field is separate — update it only when the StreamDock plugin protocol actually changes. **See Pre-release checklist below for the full procedure, including CHANGELOG and `Info.plist` sync.**
 
 ### Pre-release checklist
