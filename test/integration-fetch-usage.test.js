@@ -200,4 +200,69 @@ describe('fetchUsage codex integration', () => {
     expect(result).toBe(false);
     rmSync(emptyHome, { recursive: true, force: true });
   });
+
+  it('codex HTTP 404 does NOT trigger JSONL fallback (only 401/403/5xx)', async () => {
+    const sessDir = join(codexHomeBase, 'sessions', '2026', '04', '24');
+    mkdirSync(sessDir, { recursive: true });
+    writeFileSync(join(sessDir, 'rollout-test.jsonl'), codexSessionFixture);
+    process.env.CODEX_HOME = codexHomeBase;
+
+    let fallbackHit = false;
+    setFetchImpl(async () => {
+      fallbackHit = true;
+      return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
+    });
+
+    const result = await fetchUsage({
+      token: 'TOKEN',
+      account_id: 'ACC',
+      expiresAt: null,
+      provider: 'codex',
+      tokenSource: 'codex',
+      baseUrl: null,
+      subscriptionType: 'pro',
+    });
+
+    expect(fallbackHit).toBe(true);
+    expect(result).toBe(false);
+  });
+
+  it('codex HTTP 429 does NOT trigger JSONL fallback', async () => {
+    const sessDir = join(codexHomeBase, 'sessions', '2026', '04', '24');
+    mkdirSync(sessDir, { recursive: true });
+    writeFileSync(join(sessDir, 'rollout-test.jsonl'), codexSessionFixture);
+    process.env.CODEX_HOME = codexHomeBase;
+
+    setFetchImpl(async () => new Response(JSON.stringify({ error: 'rate_limited' }), { status: 429 }));
+
+    const result = await fetchUsage({
+      token: 'TOKEN',
+      account_id: 'ACC',
+      expiresAt: null,
+      provider: 'codex',
+      tokenSource: 'codex',
+      baseUrl: null,
+      subscriptionType: 'pro',
+    });
+
+    expect(result).toBe(false);
+  });
+
+  it('codex with no creds (auth.json missing) but JSONL sessions present uses fallback', async () => {
+    const sessDir = join(codexHomeBase, 'sessions', '2026', '04', '24');
+    mkdirSync(sessDir, { recursive: true });
+    writeFileSync(join(sessDir, 'rollout-test.jsonl'), codexSessionFixture);
+    process.env.CODEX_HOME = codexHomeBase;
+
+    setFetchImpl(async () => { throw new Error('should not be called'); });
+
+    const result = await fetchUsage(null, {
+      tokenSource: 'codex',
+      plan: 'pro',
+      autoCheckUpdates: false,
+      displayMode: 'full',
+    });
+
+    expect(result).toBe(true);
+  });
 });

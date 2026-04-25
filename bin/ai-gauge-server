@@ -41,6 +41,12 @@ let currentInterval = POLL_INTERVAL;
 let server;
 let fetchInFlight = null;
 let _fetchImpl = null;
+let fetchGeneration = 0;
+let currentAbortController = null;
+
+function shouldCodexFallbackOnStatus(status) {
+  return status === 401 || status === 403 || (typeof status === 'number' && status >= 500);
+}
 
 function logError(message) {
   console.error(message);
@@ -170,10 +176,22 @@ function doFetch(url, opts) {
   return (_fetchImpl ?? globalThis.fetch)(url, opts);
 }
 
-async function fetchUsage(creds, config) {
-  if (!creds || !creds.token) return false;
+async function fetchUsage(creds, config, { generation, signal } = {}) {
+  if (!creds || !creds.token) {
+    if (config?.tokenSource === 'codex') {
+      return await tryCodexJsonlFallback(
+        { provider: 'codex', subscriptionType: 'unknown' },
+        config ?? await readConfig(),
+        { generation }
+      );
+    }
+    return false;
+  }
   if (creds.expiresAt !== null && !isTokenValid(creds.expiresAt)) {
     logJson(console.error, 'token_expired', { source: creds.tokenSource });
+    if (creds.provider === 'codex') {
+      return await tryCodexJsonlFallback(creds, config ?? await readConfig(), { generation });
+    }
     return false;
   }
 
@@ -201,11 +219,18 @@ async function fetchUsage(creds, config) {
       { baseUrl: creds.baseUrl }
     );
 
+    const timeoutSignal = AbortSignal.timeout(10_000);
+    const fetchSignal = signal
+      ? (typeof AbortSignal.any === 'function'
+          ? AbortSignal.any([signal, timeoutSignal])
+          : timeoutSignal)
+      : timeoutSignal;
+
     const res = await doFetch(req.url, {
       method: req.method ?? 'GET',
       headers: req.headers,
       redirect: 'manual',
-      signal: AbortSignal.timeout(10_000),
+      signal: fetchSignal,
     });
 
     if (res.status >= 300 && res.status < 400) {
@@ -224,11 +249,13 @@ async function fetchUsage(creds, config) {
         provider: providerName,
         ...sanitizeError(new Error(parsed.error.reason ?? 'unknown')),
       });
-      if (creds.provider === 'codex' && parsed.error.status && parsed.error.status >= 400) {
-        return await tryCodexJsonlFallback(creds, effectiveConfig);
+      if (creds.provider === 'codex' && shouldCodexFallbackOnStatus(parsed.error.status)) {
+        return await tryCodexJsonlFallback(creds, effectiveConfig, { generation });
       }
       return false;
     }
+
+    if (generation != null && generation !== fetchGeneration) return false;
 
     cachedData = {
       ...(parsed.rateLimits ?? {}),
@@ -242,18 +269,20 @@ async function fetchUsage(creds, config) {
     await writeUsageAtomic(cachedData);
     return true;
   } catch (err) {
+    if (signal?.aborted) return false;
     logJson(console.warn, 'fetch_error', { provider: providerName, ...sanitizeError(err) });
     if (creds.provider === 'codex') {
-      return await tryCodexJsonlFallback(creds, effectiveConfig);
+      return await tryCodexJsonlFallback(creds, effectiveConfig, { generation });
     }
     return false;
   }
 }
 
-async function tryCodexJsonlFallback(creds, config) {
+async function tryCodexJsonlFallback(creds, config, { generation } = {}) {
   try {
     const { parseCodexJsonlFallback } = await import('../lib/providers/codex.js');
     const fallback = await parseCodexJsonlFallback({ codexHome: process.env.CODEX_HOME });
+    if (generation != null && generation !== fetchGeneration) return false;
     if (fallback) {
       cachedData = {
         ...fallback.rateLimits,
@@ -269,14 +298,40 @@ async function tryCodexJsonlFallback(creds, config) {
   return false;
 }
 
+function buildEmptyBroadcast(config, provider) {
+  return {
+    five_hour: null,
+    seven_day: null,
+    seven_day_sonnet: null,
+    seven_day_opus: null,
+    code_review: null,
+    extra_usage: null,
+    seven_day_oauth_apps: null,
+    seven_day_cowork: null,
+    seven_day_omelette: null,
+    balance: null,
+    meta: buildMeta(config, { provider: provider ?? 'unknown' }),
+  };
+}
+
 async function fetchAndHandleBroadcast({ force = false } = {}) {
   if (fetchInFlight && !force) return fetchInFlight;
-  if (force) fetchInFlight = null;
+  if (force) {
+    if (currentAbortController) currentAbortController.abort();
+    fetchInFlight = null;
+  }
+
+  const generation = ++fetchGeneration;
+  const abortController = new AbortController();
+  currentAbortController = abortController;
 
   fetchInFlight = (async () => {
     const config = await readConfig();
     const creds = await readCredentials(config);
-    const success = await fetchUsage(creds, config);
+    const success = await fetchUsage(creds, config, { generation, signal: abortController.signal });
+
+    if (generation !== fetchGeneration) return false;
+
     if (success) {
       currentInterval = POLL_INTERVAL;
       broadcast(cachedData);
@@ -286,19 +341,7 @@ async function fetchAndHandleBroadcast({ force = false } = {}) {
       if (cachedData) {
         broadcast(cachedData);
       } else {
-        broadcast({
-          five_hour: null,
-          seven_day: null,
-          seven_day_sonnet: null,
-          seven_day_opus: null,
-          code_review: null,
-          extra_usage: null,
-          seven_day_oauth_apps: null,
-          seven_day_cowork: null,
-          seven_day_omelette: null,
-          balance: null,
-          meta: buildMeta(config, { provider: creds?.provider ?? 'unknown' }),
-        });
+        broadcast(buildEmptyBroadcast(config, creds?.provider));
       }
     }
     return success;
