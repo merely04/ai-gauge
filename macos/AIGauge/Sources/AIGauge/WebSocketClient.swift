@@ -212,7 +212,7 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
             return
         }
 
-        if let usage = try? decoder.decode(UsagePayload.self, from: data), usage.five_hour != nil {
+        if let usage = try? decoder.decode(UsagePayload.self, from: data), usage.meta != nil {
             DispatchQueue.main.async {
                 self.lastUsagePayload = usage
                 self.onUsageUpdate?(usage)

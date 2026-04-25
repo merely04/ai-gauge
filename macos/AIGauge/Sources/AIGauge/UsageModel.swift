@@ -73,6 +73,7 @@ final class UsageModel: ObservableObject {
         self.provider = payload.meta?.provider ?? ""
         let indicator = Self.providerIndicator(provider)
         let isBalanceOnly = payload.five_hour?.utilization == nil
+        let isWaiting = payload.five_hour == nil && payload.balance == nil
 
         let fivePct = payload.five_hour?.utilization ?? 0
         let sevenPct = payload.seven_day?.utilization ?? 0
@@ -82,7 +83,9 @@ final class UsageModel: ObservableObject {
         self.percentage = fiveInt
         self.urgency = Urgency.from(percentage: fiveInt)
 
-        if isBalanceOnly && !indicator.isEmpty {
+        if isWaiting {
+            self.text = "\(Self.spark) --\(indicator)"
+        } else if isBalanceOnly && !indicator.isEmpty {
             self.text = "\(Self.spark) --\(indicator)"
         } else {
             let mode = payload.meta?.displayMode ?? "full"
@@ -114,6 +117,16 @@ final class UsageModel: ObservableObject {
         }
 
         var tooltipStr = Self.providerLabel(provider: self.provider, tokenSource: payload.meta?.tokenSource ?? "")
+        if isWaiting {
+            tooltipStr += "\n───────────────"
+            tooltipStr += "\nWaiting for data…"
+            tooltipStr += "\n(check daemon logs if this persists)"
+            self.tooltip = tooltipStr
+            self.plan = payload.meta?.plan ?? ""
+            self.tokenSource = payload.meta?.tokenSource ?? ""
+            self.displayMode = payload.meta?.displayMode ?? "full"
+            return
+        }
         tooltipStr += "\n───────────────"
         tooltipStr += "\n5-hour:  \(fiveInt)%"
         if let fiveLong = Self.formatDurationLong(payload.five_hour?.resets_at, now: now), !fiveLong.isEmpty {
