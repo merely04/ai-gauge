@@ -151,8 +151,9 @@ Server broadcasts the **raw Anthropic API response** merged with a `meta` field 
   "seven_day_cowork": null,
   "seven_day_omelette": {"utilization": 0, "resets_at": null},
   "extra_usage": {"is_enabled": true, "monthly_limit": 20000, "used_credits": 18752, "utilization": 93.76, "currency": "USD"},
+  "code_review": null,
   "balance": {"total_cents": 10000, "used_cents": 3500, "currency": "USD"},
-  "meta": {"plan": "unknown", "tokenSource": "opencode", "provider": "anthropic", "displayMode": "full", "fetchedAt": "2026-04-17T20:27:38.885Z", "version": "1.2.0", "protocolVersion": 2, "autoCheckUpdates": true}
+  "meta": {"plan": "unknown", "tokenSource": "opencode", "provider": "anthropic", "displayMode": "full", "fetchedAt": "2026-04-17T20:27:38.885Z", "version": "1.4.0", "protocolVersion": 3, "autoCheckUpdates": true}
 }
 ```
 
@@ -161,6 +162,7 @@ Field notes:
 - `resets_at` is ISO-8601 with **microsecond precision and `+00:00` timezone** — Swift's `ISO8601DateFormatter` with `.withFractionalSeconds` only handles milliseconds, so the Swift client has a fallback parser (see `UsageModel.parseISODate`).
 - `extra_usage.monthly_limit` and `used_credits` are in cents; divide by 100 for dollars.
 - `balance` — present only for credit-based providers (OpenRouter, Komilion). `total_cents` and `used_cents` are integers; divide by 100 for dollars. Absent (or `null`) for rate-limit-only providers like Anthropic.
+- `code_review` — top-level rate-limit window for Codex code-review feature. `null` for non-Codex providers; `null` on Codex Plus (only present on tiers that have code review enabled). Same shape as `five_hour`/`seven_day`. Added in protocolVersion 3.
 - `balance.extras` — provider-specific extension fields. For `komilion`: `{trial_credits_cents: number, is_low_balance: boolean}`. Other providers: absent.
 - `meta.plan`, `meta.tokenSource`, and `meta.fetchedAt` are injected by the server from `config.json` / the current state (not upstream Anthropic fields). `tokenSource` is re-broadcast on every poll and immediately after a `setConfig` mutation so clients can reflect the current selection (used by the macOS menubar for checkmarks).
 - `meta.provider` — active provider name as detected by `lib/providers/index.js` (e.g. `"anthropic"`, `"zai"`, `"openrouter"`). Injected by the server; not an upstream field.
