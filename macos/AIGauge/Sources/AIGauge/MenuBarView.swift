@@ -217,6 +217,7 @@ struct MenuBarView: View {
             get: { usageModel.tokenSource == value },
             set: { newValue in
                 if newValue {
+                    usageModel.applyOptimisticTokenSource(value)
                     configMutator.setTokenSource(value)
                 }
             }
@@ -231,6 +232,7 @@ struct MenuBarView: View {
             get: { usageModel.tokenSource == value },
             set: { newValue in
                 if newValue && source.supported {
+                    usageModel.applyOptimisticTokenSource(value)
                     configMutator.setTokenSource(value)
                 }
             }

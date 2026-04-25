@@ -269,8 +269,9 @@ async function tryCodexJsonlFallback(creds, config) {
   return false;
 }
 
-async function fetchAndHandleBroadcast() {
-  if (fetchInFlight) return fetchInFlight;
+async function fetchAndHandleBroadcast({ force = false } = {}) {
+  if (fetchInFlight && !force) return fetchInFlight;
+  if (force) fetchInFlight = null;
 
   fetchInFlight = (async () => {
     const config = await readConfig();
@@ -365,7 +366,20 @@ async function handleSetConfig(cmd) {
 
     if (key === 'tokenSource') {
       cachedData = null;
-      fetchAndHandleBroadcast().catch((err) => {
+      broadcast({
+        five_hour: null,
+        seven_day: null,
+        seven_day_sonnet: null,
+        seven_day_opus: null,
+        code_review: null,
+        extra_usage: null,
+        seven_day_oauth_apps: null,
+        seven_day_cowork: null,
+        seven_day_omelette: null,
+        balance: null,
+        meta: buildMeta(result.config, { provider: 'unknown' }),
+      });
+      fetchAndHandleBroadcast({ force: true }).catch((err) => {
         logError(`[setConfig] post-switch fetch failed: ${err instanceof Error ? err.message : String(err)}`);
       });
     } else if (cachedData) {

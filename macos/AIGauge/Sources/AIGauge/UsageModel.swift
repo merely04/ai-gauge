@@ -310,6 +310,17 @@ final class UsageModel: ObservableObject {
         }
     }
 
+    func applyOptimisticTokenSource(_ value: String) {
+        self.tokenSource = value
+        self.provider = ""
+        self.text = "\(Self.spark) --"
+        self.percentage = 0
+        self.urgency = .ok
+        self.tooltip = Self.providerLabel(provider: "", tokenSource: value)
+            + "\n───────────────"
+            + "\nSwitching…"
+    }
+
     static func providerLabel(provider: String, tokenSource: String) -> String {
         switch provider {
         case "codex": return "Codex Usage"
