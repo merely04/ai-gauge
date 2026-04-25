@@ -83,6 +83,28 @@ describe("config schema: tokenSource pattern validation", () => {
     expect(TOKEN_SOURCE_PATTERN.test('claude-settings:nekocode')).toBe(true);
     expect(TOKEN_SOURCE_PATTERN.test('claude-settings:../etc')).toBe(false);
   });
+
+  test("accepts codex as tokenSource", () => {
+    expect(validateConfigChange('tokenSource', 'codex').valid).toBe(true);
+  });
+});
+
+describe("config schema: codex plan values", () => {
+  test("accepts plus/business/edu as plan", () => {
+    for (const p of ['plus', 'business', 'edu']) {
+      expect(validateConfigChange('plan', p).valid).toBe(true);
+    }
+  });
+
+  test("existing plan values still accepted", () => {
+    for (const p of ['max', 'pro', 'team', 'enterprise', 'unknown']) {
+      expect(validateConfigChange('plan', p).valid).toBe(true);
+    }
+  });
+
+  test("rejects invalid plan value", () => {
+    expect(validateConfigChange('plan', 'invalid_xyz').valid).toBe(false);
+  });
 });
 
 describe("config schema: readConfig defaults", () => {

@@ -35,11 +35,21 @@ struct UsagePayload: Codable {
         let provider: String?
     }
 
+    struct Secondary: Codable {
+        let provider: String?
+        let five_hour: Window?
+        let seven_day: Window?
+        let code_review: Window?
+        let balance: Balance?
+    }
+
     let five_hour: Window?
     let seven_day: Window?
     let seven_day_sonnet: Window?
+    let code_review: Window?
     let extra_usage: ExtraUsage?
     let balance: Balance?
+    let secondary: Secondary?
     let meta: Meta?
 }
 
@@ -211,7 +221,7 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
             return
         }
 
-        if let usage = try? decoder.decode(UsagePayload.self, from: data), usage.five_hour != nil {
+        if let usage = try? decoder.decode(UsagePayload.self, from: data), usage.meta != nil {
             DispatchQueue.main.async {
                 self.lastUsagePayload = usage
                 self.onUsageUpdate?(usage)

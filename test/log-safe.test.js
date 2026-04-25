@@ -105,6 +105,24 @@ describe('sanitizeError', () => {
   });
 });
 
+describe('redact: codex fields', () => {
+  it('redacts account_id', () => {
+    const r = redact({ account_id: 'SECRET' });
+    expect(r.account_id).toBe('***');
+    expect(r.account_id).not.toContain('SECRET');
+  });
+
+  it('redacts refresh_token', () => {
+    const r = redact({ refresh_token: 'REFRESH_SECRET' });
+    expect(r.refresh_token).toBe('***');
+  });
+
+  it('does not redact plan_type', () => {
+    const r = redact({ plan_type: 'pro' });
+    expect(r.plan_type).toBe('pro');
+  });
+});
+
 describe('logJson', () => {
   it('logs structured JSON with event field', () => {
     let logged;

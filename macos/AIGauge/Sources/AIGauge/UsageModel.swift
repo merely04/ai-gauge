@@ -15,10 +15,10 @@ enum Urgency {
 
 @MainActor
 final class UsageModel: ObservableObject {
-    static let SUPPORTED_PROTOCOL_VERSION = 2
+    static let SUPPORTED_PROTOCOL_VERSION = 4
 
     /// Keep in sync with `lib/config.js:TOKEN_SOURCE_PATTERN`.
-    nonisolated static let TOKEN_SOURCE_PATTERN = #"^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$"#
+    nonisolated static let TOKEN_SOURCE_PATTERN = #"^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$"#
 
     nonisolated static func isValidTokenSource(_ value: String) -> Bool {
         guard let regex = try? NSRegularExpression(pattern: TOKEN_SOURCE_PATTERN) else { return false }
@@ -73,6 +73,7 @@ final class UsageModel: ObservableObject {
         self.provider = payload.meta?.provider ?? ""
         let indicator = Self.providerIndicator(provider)
         let isBalanceOnly = payload.five_hour?.utilization == nil
+        let isWaiting = payload.five_hour == nil && payload.balance == nil
 
         let fivePct = payload.five_hour?.utilization ?? 0
         let sevenPct = payload.seven_day?.utilization ?? 0
@@ -82,7 +83,9 @@ final class UsageModel: ObservableObject {
         self.percentage = fiveInt
         self.urgency = Urgency.from(percentage: fiveInt)
 
-        if isBalanceOnly && !indicator.isEmpty {
+        if isWaiting {
+            self.text = "\(Self.spark) --\(indicator)"
+        } else if isBalanceOnly && !indicator.isEmpty {
             self.text = "\(Self.spark) --\(indicator)"
         } else {
             let mode = payload.meta?.displayMode ?? "full"
@@ -113,7 +116,24 @@ final class UsageModel: ObservableObject {
             self.text = baseText + indicator
         }
 
-        var tooltipStr = "Claude Code Usage"
+        let hasSecondary = payload.secondary != nil
+
+        var tooltipStr: String
+        if hasSecondary {
+            tooltipStr = Self.providerShortName(provider: self.provider)
+        } else {
+            tooltipStr = Self.providerLabel(provider: self.provider, tokenSource: payload.meta?.tokenSource ?? "")
+        }
+        if isWaiting {
+            tooltipStr += "\n───────────────"
+            tooltipStr += "\nWaiting for data…"
+            tooltipStr += "\n(check daemon logs if this persists)"
+            self.tooltip = tooltipStr
+            self.plan = payload.meta?.plan ?? ""
+            self.tokenSource = payload.meta?.tokenSource ?? ""
+            self.displayMode = payload.meta?.displayMode ?? "full"
+            return
+        }
         tooltipStr += "\n───────────────"
         tooltipStr += "\n5-hour:  \(fiveInt)%"
         if let fiveLong = Self.formatDurationLong(payload.five_hour?.resets_at, now: now), !fiveLong.isEmpty {
@@ -132,6 +152,14 @@ final class UsageModel: ObservableObject {
             }
         }
 
+        if let codeReviewPct = payload.code_review?.utilization {
+            let codeReviewInt = Int(codeReviewPct.rounded())
+            tooltipStr += "\nCode review:  \(codeReviewInt)%"
+            if let crLong = Self.formatDurationLong(payload.code_review?.resets_at, now: now), !crLong.isEmpty {
+                tooltipStr += "  (resets in \(crLong))"
+            }
+        }
+
         if payload.extra_usage?.is_enabled == true {
             let extraPct = Int((payload.extra_usage?.utilization ?? 0).rounded())
             let extraUsed = (payload.extra_usage?.used_credits ?? 0) / 100.0
@@ -140,8 +168,38 @@ final class UsageModel: ObservableObject {
             tooltipStr += "\nExtra: $\(String(format: "%.2f", extraUsed))/$\(extraLimit) (\(extraPct)%)"
         }
 
-        if !self.provider.isEmpty {
+        if !self.provider.isEmpty && !hasSecondary {
             tooltipStr += "\nProvider: \(self.provider)"
+        }
+
+        if let secondary = payload.secondary {
+            tooltipStr += "\n───────────────"
+            tooltipStr += "\n\(Self.providerShortName(provider: secondary.provider ?? ""))"
+            if let pct = secondary.five_hour?.utilization {
+                let int = Int(pct.rounded())
+                tooltipStr += "\n5-hour:  \(int)%"
+                if let r = Self.formatDurationLong(secondary.five_hour?.resets_at, now: now), !r.isEmpty {
+                    tooltipStr += "  (resets in \(r))"
+                }
+            }
+            if let pct = secondary.seven_day?.utilization {
+                let int = Int(pct.rounded())
+                tooltipStr += "\nWeekly:  \(int)%"
+                if let r = Self.formatDurationLong(secondary.seven_day?.resets_at, now: now), !r.isEmpty {
+                    tooltipStr += "  (resets in \(r))"
+                }
+            }
+            if let pct = secondary.code_review?.utilization {
+                let int = Int(pct.rounded())
+                tooltipStr += "\nCode review:  \(int)%"
+                if let r = Self.formatDurationLong(secondary.code_review?.resets_at, now: now), !r.isEmpty {
+                    tooltipStr += "  (resets in \(r))"
+                }
+            }
+            if let bal = secondary.balance, let total = bal.total_cents {
+                let dollars = Double(total) / 100.0
+                tooltipStr += String(format: "\nBalance: $%.2f available", dollars)
+            }
         }
 
         if let bal = payload.balance {
@@ -238,7 +296,7 @@ final class UsageModel: ObservableObject {
             fetchedAt: nil,
             tokenSource: nil,
             version: nil,
-            protocolVersion: 2,
+            protocolVersion: 4,
             autoCheckUpdates: nil,
             displayMode: nil,
             provider: providerName
@@ -247,8 +305,10 @@ final class UsageModel: ObservableObject {
             five_hour: fiveWindow,
             seven_day: sevenWindow,
             seven_day_sonnet: nil,
+            code_review: nil,
             extra_usage: nil,
             balance: balance,
+            secondary: nil,
             meta: meta
         )
         update(from: synth)
@@ -290,8 +350,51 @@ final class UsageModel: ObservableObject {
         case "openrouter": return "o"
         case "komilion": return "k"
         case "packy": return "p"
+        case "codex": return "◆"
         case "unknown": return "?"
         default: return ""
+        }
+    }
+
+    func applyOptimisticTokenSource(_ value: String) {
+        self.tokenSource = value
+        self.provider = ""
+        self.text = "\(Self.spark) --"
+        self.percentage = 0
+        self.urgency = .ok
+        self.tooltip = Self.providerLabel(provider: "", tokenSource: value)
+            + "\n───────────────"
+            + "\nSwitching…"
+    }
+
+    static func providerLabel(provider: String, tokenSource: String) -> String {
+        if tokenSource == "codex" || provider == "codex" { return "Codex Usage" }
+        switch provider {
+        case "zai": return "Z.ai Usage"
+        case "minimax": return "MiniMax Usage"
+        case "openrouter": return "OpenRouter Usage"
+        case "komilion": return "Komilion Usage"
+        case "packy": return "Packy Usage"
+        default:
+            if tokenSource.hasPrefix("claude-settings:") {
+                let name = String(tokenSource.dropFirst("claude-settings:".count))
+                return "Claude (\(name)) Usage"
+            }
+            if tokenSource == "opencode" { return "OpenCode Usage" }
+            return "Claude Code Usage"
+        }
+    }
+
+    static func providerShortName(provider: String) -> String {
+        switch provider {
+        case "anthropic": return "Claude"
+        case "codex": return "Codex"
+        case "zai": return "Z.ai"
+        case "minimax": return "MiniMax"
+        case "openrouter": return "OpenRouter"
+        case "komilion": return "Komilion"
+        case "packy": return "Packy"
+        default: return provider.isEmpty ? "Unknown" : provider
         }
     }
 

@@ -121,18 +121,18 @@ if [[ "${1:-}" == "set" ]]; then
             ;;
         plan)
             case "$value" in
-                max|pro|team|enterprise|unknown) ;;
+                max|pro|team|enterprise|unknown|plus|business|edu) ;;
                 *)
-                    echo "Error: plan must be one of: max, pro, team, enterprise, unknown" >&2
+                    echo "Error: plan must be one of: max, pro, team, enterprise, unknown, plus, business, edu" >&2
                     exit 1
                     ;;
             esac
             ;;
         tokenSource)
-            if [[ "$value" =~ ^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$ ]]; then
+            if [[ "$value" =~ ^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$ ]]; then
                 :
             else
-                echo "Error: tokenSource must match pattern ^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$" >&2
+                echo "Error: tokenSource must match pattern ^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$" >&2
                 exit 1
             fi
             ;;
@@ -161,7 +161,7 @@ fi
 if is_macos && [[ "${DRY_RUN:-0}" != "1" && -z "${SELECTED_ITEM:-}" ]]; then
     echo "Config UI available via menubar right-click submenu."
     echo "For CLI use: ai-gauge-config set <key> <value>"
-    echo "  Keys: plan (max|pro|team|enterprise|unknown), tokenSource (claude-code|opencode|claude-settings:<name>), autoCheckUpdates (true|false), displayMode (full|percent-only|bar-dots|number-bar|time-to-reset)"
+    echo "  Keys: plan (max|pro|team|enterprise|unknown|plus|business|edu), tokenSource (claude-code|opencode|codex|claude-settings:<name>), autoCheckUpdates (true|false), displayMode (full|percent-only|bar-dots|number-bar|time-to-reset)"
     exit 0
 fi
 
@@ -197,7 +197,7 @@ case "$choice" in
         if [[ -f "$SCRIPT_DIR/../lib/cli-list-settings.js" ]]; then
             settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" 2>/dev/null | awk -F'|' '{print "claude-settings:"$1}')
         fi
-        new_source=$(printf '%s\n' "claude-code" "opencode" ${settings_list:+$settings_list} \
+        new_source=$(printf '%s\n' "claude-code" "opencode" "codex" ${settings_list:+$settings_list} \
             | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 250 -p "Token Source" 2>/dev/null
         ) || exit 0
         apply_config tokenSource "$new_source" "Token source: $new_source"
@@ -207,7 +207,7 @@ case "$choice" in
             echo "WOULD_SET: plan"
             exit 0
         fi
-        new_plan=$(printf '%s\n' "max" "pro" "team" "enterprise" "unknown" \
+        new_plan=$(printf '%s\n' "max" "pro" "team" "enterprise" "unknown" "plus" "business" "edu" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null
         ) || exit 0
         apply_config plan "$new_plan" "Plan: $new_plan"

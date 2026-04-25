@@ -1,0 +1,10 @@
+{
+  "auth_mode": "Chatgpt",
+  "tokens": {
+    "access_token": "FAKE_ACCESS_TOKEN",
+    "refresh_token": "FAKE_REFRESH_TOKEN",
+    "id_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJleHAiOjk5OTk5OTk5OTksInBsYW5fdHlwZSI6InBybyIsImNoYXRncHRfdXNlcl9pZCI6InVzZXItZmFrZSJ9.fake_signature",
+    "account_id": "FAKE_ACCOUNT_ID"
+  },
+  "last_refresh": "2026-04-24T19:00:00.000Z"
+}

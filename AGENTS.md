@@ -54,7 +54,8 @@ Key constants in `bin/ai-gauge-server` (change together if you touch the protoco
 Token sources (config `tokenSource` field):
 
 - `claude-code` (default): reads `~/.claude/.credentials.json` → `claudeAiOauth.accessToken` / `expiresAt`.
-- `opencode`: reads `~/.local/share/opencode/auth.json` → `anthropic.access` / `anthropic.expires`.
+- `opencode`: reads `~/.local/share/opencode/auth.json` → `anthropic.access` / `anthropic.expires`. If the same file ALSO contains an `openai` block with `type: "oauth"`, `access`, and `accountId`, the daemon makes a parallel fetch to `https://chatgpt.com/backend-api/wham/usage` and broadcasts the result under the top-level `secondary` field (best-effort — primary broadcast still succeeds when secondary fails).
+- `codex`: reads `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`) → `tokens.access_token` / `tokens.account_id`. Fetches `https://chatgpt.com/backend-api/wham/usage` (undocumented endpoint; reverse-engineered, may change). Falls back to JSONL session parsing at `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` on HTTP 4xx/5xx or network failure.
 
 State/config paths (never relocate without updating every script):
 
@@ -97,7 +98,7 @@ Providers: `anthropic` (OAuth), `zai`, `minimax` (api-key), `openrouter`, `komil
 
 Security: symlinks rejected, apiKeyHelper never executed, files >1MB rejected, settings.local.json excluded, names validated with `/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/`.
 
-Token source pattern for `claude-settings:` sources: `^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
+Token source pattern for `claude-settings:` sources: `^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
 
 ## macOS specifics
 
@@ -150,8 +151,9 @@ Server broadcasts the **raw Anthropic API response** merged with a `meta` field 
   "seven_day_cowork": null,
   "seven_day_omelette": {"utilization": 0, "resets_at": null},
   "extra_usage": {"is_enabled": true, "monthly_limit": 20000, "used_credits": 18752, "utilization": 93.76, "currency": "USD"},
+  "code_review": null,
   "balance": {"total_cents": 10000, "used_cents": 3500, "currency": "USD"},
-  "meta": {"plan": "unknown", "tokenSource": "opencode", "provider": "anthropic", "displayMode": "full", "fetchedAt": "2026-04-17T20:27:38.885Z", "version": "1.2.0", "protocolVersion": 2, "autoCheckUpdates": true}
+  "meta": {"plan": "unknown", "tokenSource": "opencode", "provider": "anthropic", "displayMode": "full", "fetchedAt": "2026-04-17T20:27:38.885Z", "version": "1.4.0", "protocolVersion": 3, "autoCheckUpdates": true}
 }
 ```
 
@@ -160,11 +162,13 @@ Field notes:
 - `resets_at` is ISO-8601 with **microsecond precision and `+00:00` timezone** — Swift's `ISO8601DateFormatter` with `.withFractionalSeconds` only handles milliseconds, so the Swift client has a fallback parser (see `UsageModel.parseISODate`).
 - `extra_usage.monthly_limit` and `used_credits` are in cents; divide by 100 for dollars.
 - `balance` — present only for credit-based providers (OpenRouter, Komilion). `total_cents` and `used_cents` are integers; divide by 100 for dollars. Absent (or `null`) for rate-limit-only providers like Anthropic.
+- `code_review` — top-level rate-limit window for Codex code-review feature. `null` for non-Codex providers; `null` on Codex Plus (only present on tiers that have code review enabled). Same shape as `five_hour`/`seven_day`. Added in protocolVersion 3.
+- `secondary` — optional second-provider snapshot, emitted only when `tokenSource: "opencode"` and the OpenCode auth.json contains an OAuth `openai` block. Shape: `{ provider, five_hour, seven_day, code_review, balance }`. `null` for all other tokenSources or when no OpenAI OAuth credentials are present. Added in protocolVersion 4.
 - `balance.extras` — provider-specific extension fields. For `komilion`: `{trial_credits_cents: number, is_low_balance: boolean}`. Other providers: absent.
 - `meta.plan`, `meta.tokenSource`, and `meta.fetchedAt` are injected by the server from `config.json` / the current state (not upstream Anthropic fields). `tokenSource` is re-broadcast on every poll and immediately after a `setConfig` mutation so clients can reflect the current selection (used by the macOS menubar for checkmarks).
 - `meta.provider` — active provider name as detected by `lib/providers/index.js` (e.g. `"anthropic"`, `"zai"`, `"openrouter"`). Injected by the server; not an upstream field.
 - `meta.version` — the daemon's own ai-gauge version (from `package.json`).
-- `meta.protocolVersion` — currently `2` (bumped from 1 when `balance` and `meta.provider` were added). Additive change; v1 clients that ignore unknown fields are unaffected.
+- `meta.protocolVersion` — currently `4` (bumped from 3 when the `secondary` top-level field was added so OpenCode users with both Anthropic and OpenAI OAuth see both providers' usage). Additive change; v3 clients ignore the new field.
 - `meta.autoCheckUpdates` — current value of the `autoCheckUpdates` config key.
 - `meta.displayMode` — current display mode: `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`. Clients fall back to `full` if absent or unrecognized.
 - Any of the `seven_day_*` windows may be `null`.
@@ -204,8 +208,8 @@ Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, write
 {"type":"setConfig","key":"displayMode","value":"bar-dots"}
 ```
 
-- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`; `tokenSource` → `claude-code`, `opencode`; `autoCheckUpdates` → `true`, `false`; `displayMode` → `full`, `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
-- `tokenSource` also accepts `claude-settings:{name}` values matching `^(claude-code|opencode|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
+- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`, `plus` (Codex), `business` (Codex), `edu` (Codex); `tokenSource` → `claude-code`, `opencode`, `codex`; `autoCheckUpdates` → `true`, `false`; `displayMode` → `full`, `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
+- `tokenSource` also accepts `claude-settings:{name}` values matching `^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
 - Server **rejects** any value outside the canonical enum (logs warning, config unchanged)
 - Do NOT change the raw-broadcast shape without updating both `bin/ai-gauge-waybar` and `macos/AIGauge/Sources/AIGauge/UsageModel.swift` in the same commit.
 

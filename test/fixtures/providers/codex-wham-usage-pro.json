@@ -1,0 +1,19 @@
+{
+  "user_id": "user-fake",
+  "account_id": "user-fake",
+  "plan_type": "pro",
+  "rate_limit": {
+    "allowed": true,
+    "limit_reached": false,
+    "primary_window": { "used_percent": 67, "limit_window_seconds": 18000, "reset_after_seconds": 3600, "reset_at": 1745539200 },
+    "secondary_window": { "used_percent": 23, "limit_window_seconds": 604800, "reset_after_seconds": 86400, "reset_at": 1745798400 }
+  },
+  "code_review_rate_limit": {
+    "primary_window": { "used_percent": 30, "limit_window_seconds": 86400, "reset_after_seconds": 7200, "reset_at": 1745539200 }
+  },
+  "credits": {
+    "has_credits": true,
+    "balance": 5.39,
+    "currency": "USD"
+  }
+}
