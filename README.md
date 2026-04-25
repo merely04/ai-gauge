@@ -4,7 +4,7 @@
 </h1>
 
 <p align="center">
-  Real-time Claude Code usage monitor. Tracks 5-hour and weekly API rate limits with countdown timers and desktop notifications.<br>
+  Real-time usage monitor for Claude Code, OpenCode and OpenAI Codex. Tracks rate limits with countdown timers and desktop notifications.<br>
   Runs on Linux (Waybar) and macOS (native menubar app).
 </p>
 
@@ -27,7 +27,9 @@
 - **Desktop notifications** — alert at 80% usage, auto-clear below 50%
 - **Right-click menu** — refresh, copy stats, change plan / token source with checkmarks (macOS), open settings
 - **StreamDock plugin** — usage stats on a physical key (Fifine AmpliGame D6)
-- **Multiple token sources** — Claude Code CLI or OpenCode
+- **Multiple token sources** — Claude Code CLI, OpenCode, or OpenAI Codex CLI
+- **OpenCode dual mode** — when OpenCode has both Anthropic and OpenAI OAuth logins, the tooltip shows Claude AND Codex usage side-by-side in a single view
+- **Codex JSONL fallback** — if `chatgpt.com/wham/usage` is unreachable, parses `~/.codex/sessions/*.jsonl` for the latest rate-limit snapshot
 - **WebSocket architecture** — one server broadcasts to all clients in real time
 - **systemd / launchd service** — starts on login, auto-restarts on failure
 - **Zero dependencies** — runs on Bun, no npm packages
@@ -119,6 +121,24 @@ Sonnet:  0%
 Extra: $171.22/$200 (86%)
 ```
 
+When `tokenSource: opencode` and your OpenCode auth file carries both Anthropic and OpenAI OAuth, you see both providers in one tooltip:
+
+![multi-provider tooltip](assets/macos-multi-provider.png)
+
+```
+Claude
+───────────────
+5-hour:  31%  (resets in 2h 29m)
+Weekly:  16%  (resets in 2d 9h 59m)
+Sonnet:   2%  (resets in 2d 9h 59m)
+───────────────
+Extra: $204.10/$200 (100%)
+───────────────
+Codex
+5-hour:  24%  (resets in 4h 12m)
+Weekly:  15%  (resets in 3d 11h 44m)
+```
+
 The current plan and token source are reflected as **checkmarks in the submenu** (macOS) and in the Linux tooltip footer.
 
 ![tooltip](assets/tooltip.png)
@@ -173,8 +193,8 @@ Config file: `~/.config/ai-gauge/config.json`
 
 | Field | Values | Description |
 |-------|--------|-------------|
-| `tokenSource` | `claude-code` (default), `opencode` | OAuth token source |
-| `plan` | `max`, `pro`, `team`, `enterprise`, `unknown` | Subscription plan (shown in tooltip) |
+| `tokenSource` | `claude-code` (default), `opencode`, `codex`, `claude-settings:<name>` | OAuth credential source |
+| `plan` | `max`, `pro`, `team`, `enterprise`, `unknown` (Anthropic) <br> `plus`, `pro`, `business`, `enterprise`, `edu` (Codex) | Subscription plan (shown in tooltip) |
 | `displayMode` | `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset` | Display format for menubar/waybar |
 
 Change settings via menu (macOS submenu / Linux walker UI) or CLI (works on both):
@@ -184,6 +204,28 @@ ai-gauge-config set tokenSource opencode
 ai-gauge-config set plan max
 ai-gauge-config get
 ```
+
+## OpenAI Codex (ChatGPT subscription)
+
+ai-gauge can monitor Codex CLI usage from a ChatGPT Plus / Pro / Business / Enterprise / Edu subscription.
+
+```bash
+# Make sure Codex CLI is logged in (if you haven't already):
+codex auth login
+
+# Tell ai-gauge to read from ~/.codex/auth.json:
+ai-gauge-config set tokenSource codex
+```
+
+The daemon will fetch `https://chatgpt.com/backend-api/wham/usage` (the same endpoint Codex CLI itself uses) once a minute. The tooltip then shows 5-hour and weekly windows, plus the code-review window and credit balance when present.
+
+> **Note**: `/wham/usage` is an undocumented internal endpoint. We mirror Codex CLI's headers (`Authorization: Bearer ...`, `ChatGPT-Account-Id: ...`, `User-Agent: codex_cli_rs/...`). If the endpoint changes upstream, ai-gauge falls back to parsing `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` for the latest `token_count` event so you still see something.
+
+### `codex` requirements
+
+- Codex CLI installed and logged in (`codex` will create `~/.codex/auth.json` on first login)
+- Credentials stored in **file mode** — the default. If you set `cli_auth_credentials_store: "macOS_keychain"` in `~/.codex/config.toml`, ai-gauge cannot read your tokens (background launchd agents can't show interactive Keychain prompts) and will degrade to JSONL session parsing.
+- Plain OpenAI API keys (`sk-...`) are **not supported** — the `/wham/usage` endpoint requires the OAuth `access_token` from `codex auth login`.
 
 ## Using a Different Claude Provider
 
@@ -291,7 +333,14 @@ The button connects to `ai-gauge-server` via WebSocket and updates in real time.
 
 ## How it works
 
-`ai-gauge-server` runs as a background daemon (systemd on Linux, launchd on macOS), polling the Anthropic usage API (`/api/oauth/usage`) every 60 seconds. It reads the OAuth token from either Claude Code CLI or OpenCode credentials and broadcasts results to all connected WebSocket clients on `ws://localhost:19876`.
+`ai-gauge-server` runs as a background daemon (systemd on Linux, launchd on macOS) and polls the relevant provider's usage API every 60 seconds:
+
+- **Claude Code / OpenCode (Anthropic OAuth)** → `https://api.anthropic.com/api/oauth/usage`
+- **OpenAI Codex** → `https://chatgpt.com/backend-api/wham/usage` (with JSONL fallback to `~/.codex/sessions/`)
+- **OpenCode dual mode** → both endpoints in parallel, broadcast carries a top-level `secondary` field for the second provider's data
+- **Custom `claude-settings:*` providers** → whatever `ANTHROPIC_BASE_URL` you configure (Z.ai, MiniMax, OpenRouter, Komilion, Packy)
+
+Results are broadcast to all connected WebSocket clients on `ws://localhost:19876`.
 
 On **Linux**, `ai-gauge-waybar` is a thin WebSocket client that renders each update as waybar-compatible JSON. On disconnect it shows a waiting state and reconnects automatically.
 
