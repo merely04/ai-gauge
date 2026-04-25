@@ -145,6 +145,14 @@ final class UsageModel: ObservableObject {
             }
         }
 
+        if let codeReviewPct = payload.code_review?.utilization {
+            let codeReviewInt = Int(codeReviewPct.rounded())
+            tooltipStr += "\nCode review:  \(codeReviewInt)%"
+            if let crLong = Self.formatDurationLong(payload.code_review?.resets_at, now: now), !crLong.isEmpty {
+                tooltipStr += "  (resets in \(crLong))"
+            }
+        }
+
         if payload.extra_usage?.is_enabled == true {
             let extraPct = Int((payload.extra_usage?.utilization ?? 0).rounded())
             let extraUsed = (payload.extra_usage?.used_credits ?? 0) / 100.0
@@ -251,7 +259,7 @@ final class UsageModel: ObservableObject {
             fetchedAt: nil,
             tokenSource: nil,
             version: nil,
-            protocolVersion: 2,
+            protocolVersion: 3,
             autoCheckUpdates: nil,
             displayMode: nil,
             provider: providerName
@@ -322,8 +330,8 @@ final class UsageModel: ObservableObject {
     }
 
     static func providerLabel(provider: String, tokenSource: String) -> String {
+        if tokenSource == "codex" || provider == "codex" { return "Codex Usage" }
         switch provider {
-        case "codex": return "Codex Usage"
         case "zai": return "Z.ai Usage"
         case "minimax": return "MiniMax Usage"
         case "openrouter": return "OpenRouter Usage"

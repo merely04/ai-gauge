@@ -7,7 +7,7 @@ struct MenuBarView: View {
     @EnvironmentObject var configMutator: ConfigMutator
     @EnvironmentObject var webSocketClient: WebSocketClient
 
-    private let plans: [String] = ["max", "pro", "team", "enterprise", "unknown"]
+    private let plans: [String] = ["max", "pro", "team", "enterprise", "unknown", "plus", "business", "edu"]
     private let sources: [(value: String, display: String)] = [
         ("claude-code", "Claude Code"),
         ("opencode", "OpenCode"),

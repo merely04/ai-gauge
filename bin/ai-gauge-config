@@ -121,9 +121,9 @@ if [[ "${1:-}" == "set" ]]; then
             ;;
         plan)
             case "$value" in
-                max|pro|team|enterprise|unknown) ;;
+                max|pro|team|enterprise|unknown|plus|business|edu) ;;
                 *)
-                    echo "Error: plan must be one of: max, pro, team, enterprise, unknown" >&2
+                    echo "Error: plan must be one of: max, pro, team, enterprise, unknown, plus, business, edu" >&2
                     exit 1
                     ;;
             esac
@@ -161,7 +161,7 @@ fi
 if is_macos && [[ "${DRY_RUN:-0}" != "1" && -z "${SELECTED_ITEM:-}" ]]; then
     echo "Config UI available via menubar right-click submenu."
     echo "For CLI use: ai-gauge-config set <key> <value>"
-    echo "  Keys: plan (max|pro|team|enterprise|unknown), tokenSource (claude-code|opencode|claude-settings:<name>), autoCheckUpdates (true|false), displayMode (full|percent-only|bar-dots|number-bar|time-to-reset)"
+    echo "  Keys: plan (max|pro|team|enterprise|unknown|plus|business|edu), tokenSource (claude-code|opencode|codex|claude-settings:<name>), autoCheckUpdates (true|false), displayMode (full|percent-only|bar-dots|number-bar|time-to-reset)"
     exit 0
 fi
 
@@ -207,7 +207,7 @@ case "$choice" in
             echo "WOULD_SET: plan"
             exit 0
         fi
-        new_plan=$(printf '%s\n' "max" "pro" "team" "enterprise" "unknown" \
+        new_plan=$(printf '%s\n' "max" "pro" "team" "enterprise" "unknown" "plus" "business" "edu" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null
         ) || exit 0
         apply_config plan "$new_plan" "Plan: $new_plan"
