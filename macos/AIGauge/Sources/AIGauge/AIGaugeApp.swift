@@ -58,6 +58,11 @@ struct AIGaugeApp: App {
                 usage?.updateSources(sources)
             }
         }
+        ws.onConfigError = { [weak usage] payload in
+            Task { @MainActor in
+                usage?.handleConfigError(payload)
+            }
+        }
         ws.onConnect = { [weak ws] in
             ws?.requestSettingsFiles()
         }

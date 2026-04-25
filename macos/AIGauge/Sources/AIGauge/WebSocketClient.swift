@@ -88,6 +88,7 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
     var onUpdateCheckFailed: ((UpdateCheckFailedPayload) -> Void)?
     var onUpdateAlreadyInProgress: (() -> Void)?
     var onSettingsFiles: (([DiscoveredSource]) -> Void)?
+    var onConfigError: ((ConfigErrorPayload) -> Void)?
     var onConnect: (() -> Void)?
 
     private let session: URLSession
@@ -203,6 +204,11 @@ final class WebSocketClient: ObservableObject, @unchecked Sendable {
             case "settingsFiles":
                 if let payload = try? decoder.decode(SettingsFilesPayload.self, from: data) {
                     DispatchQueue.main.async { self.onSettingsFiles?(payload.files) }
+                    return
+                }
+            case "configError":
+                if let payload = try? decoder.decode(ConfigErrorPayload.self, from: data) {
+                    DispatchQueue.main.async { self.onConfigError?(payload) }
                     return
                 }
             case "notify":

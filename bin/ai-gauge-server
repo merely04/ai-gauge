@@ -453,65 +453,70 @@ function ensurePortAvailable() {
   }
 }
 
-async function handleSetConfig(cmd) {
+async function handleSetConfig(cmd, ws) {
   const { key, value } = cmd;
   const validation = validateConfigChange(key, value);
   if (!validation.valid) {
     logError(`[setConfig] rejected: ${validation.reason}`);
+    sendToClient(ws, { type: 'configError', key, value, reason: validation.reason });
     return;
   }
 
+  let result;
   try {
-    const result = await applyConfigChange(key, value);
-    if (!result.applied) {
-      logError(`[setConfig] rejected: ${result.reason}`);
-      return;
-    }
-    logError(`[setConfig] applied: ${key}=${value}`);
-
-    if (key === 'tokenSource') {
-      cachedData = null;
-      broadcast({
-        five_hour: null,
-        seven_day: null,
-        seven_day_sonnet: null,
-        seven_day_opus: null,
-        code_review: null,
-        extra_usage: null,
-        seven_day_oauth_apps: null,
-        seven_day_cowork: null,
-        seven_day_omelette: null,
-        balance: null,
-        meta: buildMeta(result.config, { provider: 'unknown' }),
-      });
-      fetchAndHandleBroadcast({ force: true }).catch((err) => {
-        logError(`[setConfig] post-switch fetch failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
-    } else if (cachedData) {
-      cachedData = {
-        ...cachedData,
-        meta: {
-          ...cachedData.meta,
-          tokenSource: result.config.tokenSource,
-          ...(key === 'plan' ? { plan: value } : {}),
-          ...(key === 'autoCheckUpdates' ? { autoCheckUpdates: value } : {}),
-          ...(key === 'displayMode' ? { displayMode: value } : {}),
-        },
-      };
-      broadcast(cachedData);
-    }
-
-    if (key === 'autoCheckUpdates') {
-      if (value === false) {
-        updateLifecycle.cancel();
-        logError('[update] auto-check disabled; scheduler cancelled');
-      } else if (!updateLifecycle.isScheduled()) {
-        logError('[update] auto-check enabled; scheduler restarted');
-        updateLifecycle.schedule(UPDATE_CHECK_INITIAL_DELAY_MS);
-      }
-    }
+    result = await applyConfigChange(key, value);
   } catch (err) {
-    logError(`[setConfig] write failed: ${err instanceof Error ? err.message : String(err)}`);
+    const reason = err instanceof Error ? err.message : String(err);
+    logError(`[setConfig] write failed: ${reason}`);
+    sendToClient(ws, { type: 'configError', key, value, reason: `write failed: ${reason}` });
+    return;
+  }
+
+  if (!result.applied) {
+    logError(`[setConfig] rejected: ${result.reason}`);
+    sendToClient(ws, { type: 'configError', key, value, reason: result.reason });
+    return;
+  }
+
+  logError(`[setConfig] applied: ${key}=${value}`);
+
+  if (key === 'tokenSource') {
+    cachedData = null;
+    broadcast(buildEmptyBroadcast(result.config, 'unknown'));
+    fetchAndHandleBroadcast({ force: true }).catch((err) => {
+      const reason = err instanceof Error ? err.message : String(err);
+      logError(`[setConfig] post-switch fetch failed: ${reason}`);
+      // Re-broadcast an empty state so optimistic clients can recover instead of
+      // staying stuck in "Switching…". The original empty broadcast above is
+      // enough for clients that received it, but a second one is harmless and
+      // covers the case where the client (re)connects mid-switch.
+      try {
+        broadcast(buildEmptyBroadcast(result.config, 'unknown'));
+      } catch {}
+      sendToClient(ws, { type: 'configError', key, value, reason: `fetch failed: ${reason}` });
+    });
+  } else if (cachedData) {
+    cachedData = {
+      ...cachedData,
+      meta: {
+        ...cachedData.meta,
+        tokenSource: result.config.tokenSource,
+        ...(key === 'plan' ? { plan: value } : {}),
+        ...(key === 'autoCheckUpdates' ? { autoCheckUpdates: value } : {}),
+        ...(key === 'displayMode' ? { displayMode: value } : {}),
+      },
+    };
+    broadcast(cachedData);
+  }
+
+  if (key === 'autoCheckUpdates') {
+    if (value === false) {
+      updateLifecycle.cancel();
+      logError('[update] auto-check disabled; scheduler cancelled');
+    } else if (!updateLifecycle.isScheduled()) {
+      logError('[update] auto-check enabled; scheduler restarted');
+      updateLifecycle.schedule(UPDATE_CHECK_INITIAL_DELAY_MS);
+    }
   }
 }
 
@@ -526,9 +531,22 @@ function createServer() {
         return new Response('WS only', { status: 426 });
       },
       websocket: {
-        open(ws) {
+        async open(ws) {
           addClient(ws);
-          if (cachedData) sendToClient(ws, cachedData);
+          if (cachedData) {
+            sendToClient(ws, cachedData);
+          } else {
+            // Even without fetched usage data, send a minimal payload so optimistic
+            // clients (e.g. macOS menubar after applyOptimisticTokenSource) can
+            // exit their "Switching…" state immediately on (re)connect rather
+            // than waiting for the next poll.
+            try {
+              const config = await readConfig();
+              sendToClient(ws, buildEmptyBroadcast(config, 'unknown'));
+            } catch (err) {
+              logError(`[ws.open] failed to send empty broadcast: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
           const updatePayload = updateLifecycle.buildAvailablePayload();
           if (updatePayload) sendToClient(ws, updatePayload);
         },
@@ -589,7 +607,7 @@ function createServer() {
           }
 
           if (cmd?.type === 'setConfig') {
-            await handleSetConfig(cmd);
+            await handleSetConfig(cmd, ws);
           }
         },
         close(ws) {

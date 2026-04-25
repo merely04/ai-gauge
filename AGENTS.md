@@ -210,8 +210,24 @@ Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, write
 
 - key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`, `plus` (Codex), `business` (Codex), `edu` (Codex); `tokenSource` → `claude-code`, `opencode`, `codex`; `autoCheckUpdates` → `true`, `false`; `displayMode` → `full`, `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
 - `tokenSource` also accepts `claude-settings:{name}` values matching `^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
-- Server **rejects** any value outside the canonical enum (logs warning, config unchanged)
+- Server **rejects** any value outside the canonical enum (logs warning, sends `{type:"configError",...}` to the requesting client, config unchanged)
+- For `tokenSource` changes the server invalidates `cachedData`, broadcasts an empty payload to all clients with `meta.tokenSource` set to the new value (so optimistic clients can clear their "Switching…" state immediately), then runs `fetchAndHandleBroadcast({force:true})` to fetch fresh usage. On fetch failure, a second empty broadcast is emitted and the requester gets a `configError` with the failure reason.
 - Do NOT change the raw-broadcast shape without updating both `bin/ai-gauge-waybar` and `macos/AIGauge/Sources/AIGauge/UsageModel.swift` in the same commit.
+
+### setConfig error response (server → requester only)
+
+Sent only to the WebSocket client that issued the offending `setConfig` command. Lets the menubar abort its optimistic "Switching…" state immediately instead of waiting for the watchdog timeout.
+
+```json
+{"type":"configError","key":"tokenSource","value":"not a valid src","reason":"invalid tokenSource=not a valid src: must match /^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$/"}
+```
+
+Emitted when:
+- `validateConfigChange()` rejects the value (e.g. malformed `claude-settings:` name, unknown plan, wrong displayMode);
+- `applyConfigChange()` reports `applied=false` or throws while writing `~/.config/ai-gauge/config.json` (permission, disk full, IO error);
+- For `tokenSource` only: the post-switch forced fetch (`fetchAndHandleBroadcast({force:true})`) throws after the empty broadcast has already been sent. In this case the server also re-broadcasts an empty payload to all clients so they can recover.
+
+Note: This is **client-targeted**, not broadcast. Other clients see only the empty broadcast (or, on success, the next usage broadcast).
 
 ### Update message types (server → all clients)
 

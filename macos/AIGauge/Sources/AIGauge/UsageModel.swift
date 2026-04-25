@@ -50,6 +50,10 @@ final class UsageModel: ObservableObject {
 
     var _previousDaemonVersion: String? = nil
 
+    static let switchingWatchdogSeconds: Double = 8
+
+    private var switchingWatchdog: Task<Void, Never>? = nil
+
     private static let dotFilled = "\u{25CF}"
     private static let dotEmpty = "\u{25CB}"
     private static let barFilled = "\u{2593}"
@@ -64,6 +68,8 @@ final class UsageModel: ObservableObject {
     /// Replicates `render()` from `bin/ai-gauge-waybar` — transforms the raw
     /// Anthropic API broadcast into display-ready text/tooltip/urgency.
     func update(from payload: UsagePayload, now: Date = Date()) {
+        cancelSwitchingWatchdog()
+
         if let pv = payload.meta?.protocolVersion {
             self.protocolMismatch = pv > Self.SUPPORTED_PROTOCOL_VERSION
         } else {
@@ -365,6 +371,43 @@ final class UsageModel: ObservableObject {
         self.tooltip = Self.providerLabel(provider: "", tokenSource: value)
             + "\n───────────────"
             + "\nSwitching…"
+
+        switchingWatchdog?.cancel()
+        let timeout = Self.switchingWatchdogSeconds
+        switchingWatchdog = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            if Task.isCancelled { return }
+            self?.handleSwitchingTimeout(expected: value)
+        }
+    }
+
+    func handleConfigError(_ payload: ConfigErrorPayload) {
+        cancelSwitchingWatchdog()
+        guard payload.key == "tokenSource" else { return }
+        let attempted = payload.value?.stringValue ?? self.tokenSource
+        self.tooltip = Self.providerLabel(provider: "", tokenSource: attempted)
+            + "\n───────────────"
+            + "\nSwitch failed: \(payload.reason)"
+            + "\n(check daemon logs)"
+        writeMenuStateSnapshot()
+    }
+
+    private func handleSwitchingTimeout(expected: String) {
+        guard self.tooltip.contains("Switching…"), self.tokenSource == expected else {
+            switchingWatchdog = nil
+            return
+        }
+        self.tooltip = Self.providerLabel(provider: "", tokenSource: expected)
+            + "\n───────────────"
+            + "\nSwitch timed out — server didn't respond"
+            + "\n(check daemon logs)"
+        switchingWatchdog = nil
+        writeMenuStateSnapshot()
+    }
+
+    private func cancelSwitchingWatchdog() {
+        switchingWatchdog?.cancel()
+        switchingWatchdog = nil
     }
 
     static func providerLabel(provider: String, tokenSource: String) -> String {

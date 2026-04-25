@@ -7,6 +7,19 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.1] — 2026-04-25
+
+### Fixed
+- macOS menubar getting permanently stuck in **"Switching…"** state after clicking a different token source. Three-layer recovery introduced in 1.4.0's optimistic UI was missing:
+  1. Server now sends `{type:"configError",key,value,reason}` to the requesting WebSocket client whenever `setConfig` validation/persistence fails (previously silent return → optimistic clients sat in "Switching…" forever).
+  2. Server's `open()` handler now sends an empty broadcast to (re)connecting clients when `cachedData` is `null` so optimistic state can clear without waiting for the next 60s poll. Previously a WebSocket reconnect mid-switch left clients with no broadcast at all until the next successful fetch.
+  3. macOS menubar `applyOptimisticTokenSource()` now starts an 8-second watchdog. If no broadcast or `configError` arrives in that window, the tooltip switches to a clear "Switch timed out" message instead of staying frozen.
+
+### Added
+- WebSocket message type `configError` (server → requester only). Client-targeted, not broadcast — other clients are unaffected. See AGENTS.md for the full schema and emission triggers.
+- `ConfigErrorPayload` decoder + `onConfigError` callback in the macOS Swift WebSocket client.
+- 5 integration tests in `test/integration/setconfig-recovery-flow.test.js` covering: malformed `tokenSource` → configError, invalid `plan` → configError, configError targeting only the requester, empty broadcast on first connect, and reconnecting client receiving fresh meta after a tokenSource switch.
+
 ## [1.4.0] — 2026-04-24
 
 ### Added
