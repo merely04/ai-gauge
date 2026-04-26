@@ -1,0 +1,68 @@
+name: Provider request
+description: Request support for a new AI provider, usage endpoint, or balance API.
+title: "[Provider]: "
+labels:
+  - provider-request
+body:
+  - type: input
+    id: provider_name
+    attributes:
+      label: Provider name
+      description: The provider you want to add.
+      placeholder: DeepSeek
+    validations:
+      required: true
+  - type: input
+    id: provider_url
+    attributes:
+      label: Provider website
+      description: The provider's homepage or product URL.
+      placeholder: https://deepseek.com
+    validations:
+      required: true
+  - type: input
+    id: api_endpoint
+    attributes:
+      label: Usage or balance API endpoint
+      description: Share the usage, balance, or quota endpoint if you know it.
+      placeholder: https://api.example.com/usage
+    validations:
+      required: false
+  - type: dropdown
+    id: auth_type
+    attributes:
+      label: Authentication type
+      description: What kind of auth does the provider use?
+      options:
+        - API key (Bearer)
+        - OAuth
+        - Browser cookies
+        - Other
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: api_docs
+    attributes:
+      label: API docs
+      description: Link to the relevant API documentation or reference material.
+      placeholder: Paste docs links here.
+    validations:
+      required: false
+  - type: textarea
+    id: personal_use
+    attributes:
+      label: Personal use
+      description: Are you a paying customer or active user of this provider? This helps prioritize requests.
+      placeholder: Explain your use case and status.
+    validations:
+      required: false
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: Provider has a public usage or balance API.
+          required: true
+        - label: I checked the existing providers do not already cover this.
+          required: true

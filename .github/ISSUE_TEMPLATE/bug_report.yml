@@ -1,0 +1,84 @@
+name: Bug report
+description: Report a problem with ai-gauge on macOS, Linux, or both.
+title: "[Bug]: "
+labels:
+  - bug
+  - triage
+body:
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: Which platform are you seeing this on?
+      options:
+        - macOS
+        - Linux
+        - both
+        - other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ai-gauge version
+      description: Run `ai-gauge --version` or check `package.json`.
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: tokenSource
+    attributes:
+      label: tokenSource
+      description: Which credential source was active when the bug happened?
+      options:
+        - claude-code
+        - opencode
+        - codex
+        - claude-settings:*
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened
+      description: Describe the bug in plain language.
+      placeholder: Tell us what you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect
+      description: Describe the behavior you expected instead.
+      placeholder: Tell us what should have happened.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: List the exact steps needed to trigger the bug.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Include any relevant logs. On Linux try `journalctl --user -u ai-gauge-server -n 50`; on macOS check `~/Library/Logs/ai-gauge/server.log` and `~/Library/Logs/ai-gauge/menubar.log`.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I checked existing issues.
+          required: true
+        - label: I'm running the latest version.
+          required: true

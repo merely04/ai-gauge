@@ -1,0 +1,54 @@
+name: Feature request
+description: Suggest an improvement or new capability for ai-gauge.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve?
+      placeholder: Describe the current pain point.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed solution
+      description: How would you like this to work?
+      placeholder: Explain your preferred solution.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you consider?
+      placeholder: List any alternatives or workarounds.
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the product does this affect most?
+      options:
+        - UI/UX
+        - Provider
+        - Display mode
+        - Notifications
+        - Update system
+        - Platform (macOS)
+        - Platform (Linux)
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I checked existing issues and Discussions.
+          required: true

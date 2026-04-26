@@ -14,6 +14,7 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey" alt="Platform: macOS | Linux" />
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-fbf0df?logo=bun&logoColor=black" alt="Runtime: Bun" /></a>
   <a href="https://github.com/merely04/ai-gauge/actions/workflows/publish.yml"><img src="https://github.com/merely04/ai-gauge/actions/workflows/publish.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/merely04/ai-gauge/discussions"><img src="https://img.shields.io/github/discussions/merely04/ai-gauge?logo=github&label=discussions" alt="Discussions" /></a>
 </p>
 
 ```
@@ -33,6 +34,42 @@
 - **WebSocket architecture** — one server broadcasts to all clients in real time
 - **systemd / launchd service** — starts on login, auto-restarts on failure
 - **Zero dependencies** — runs on Bun, no npm packages
+
+## Why ai-gauge?
+
+A few other tools do similar things. Which one fits depends on what you actually need, so here's an honest side-by-side.
+
+| Feature | ai-gauge | [waybar-ai-usage] | [ai-quota-waybar] | [ClaudeBar] |
+|---|---|---|---|---|
+| Native macOS menubar app | ✅ Swift MenuBarExtra | — | — | — |
+| Linux Waybar module | ✅ | ✅ | ✅ | ✅ |
+| Real-time WebSocket push | ✅ (60s poll, instant broadcast) | — polling | — polling | — polling |
+| Supported providers | 6 real + 2 stubs | 4 | 3 | 2 |
+| GitHub Copilot support | — | ✅ | — | — |
+| Gemini CLI support | — | — | ✅ | — |
+| Browser cookie auth (no API keys) | — | ✅ Chrome/Firefox | — | — |
+| StreamDock physical-key plugin | ✅ Fifine D6 | — | — | — |
+| Claude + Codex side-by-side view | ✅ OpenCode dual mode | — | — | — |
+| Auto-update system | ✅ npm registry | — | — | — |
+| Zero npm runtime dependencies | ✅ | — (browser_cookie3) | ✅ pure Bash | — |
+| Stack | Bun JS + Swift | Python | Bash + jq | TypeScript + Bun |
+
+[waybar-ai-usage]: https://github.com/NihilDigit/waybar-ai-usage
+[ai-quota-waybar]: https://github.com/komagata/ai-quota-waybar
+[ClaudeBar]: https://github.com/andresreibel/ClaudeBar
+
+### Where ai-gauge is unique
+
+- The only tool with a native macOS menubar app (Swift, no Electron, no browser window)
+- Multi-provider unified view: Claude and Codex usage in a single tooltip when using OpenCode
+- StreamDock plugin for physical hardware key display
+- Provider registry covers Z.ai, MiniMax, OpenRouter, Komilion and others beyond the big two
+
+### Where competitors are stronger
+
+- **NihilDigit/waybar-ai-usage** is the right pick if you use GitHub Copilot or want browser-cookie auth (no credential files to manage, works with Chrome/Firefox sessions out of the box)
+- **komagata/ai-quota-waybar** is the right pick if you use Gemini CLI and want a zero-dependency pure Bash solution with no Bun requirement
+- **andresreibel/ClaudeBar** has a clean click-to-toggle UX between Claude and Codex and handles 429 backoff gracefully with cached payloads
 
 ## LLM Agent Install
 
@@ -374,3 +411,15 @@ The server writes `usage.json` atomically to `$XDG_RUNTIME_DIR/ai-gauge/` on Lin
 | `lib/streamdock-plugin/` | StreamDock (Fifine D6) button plugin |
 
 Both setup and uninstall are idempotent.
+
+## Community & Feedback
+
+ai-gauge is early — first users still arriving. Feedback at any level helps:
+
+- **Questions, install issues, "how do I do X"** → [Discussions / Q&A](https://github.com/merely04/ai-gauge/discussions/categories/q-a)
+- **Feature ideas, brainstorming** → [Discussions / Ideas](https://github.com/merely04/ai-gauge/discussions/categories/ideas)
+- **Confirmed bugs with repro steps** → [Open an Issue](https://github.com/merely04/ai-gauge/issues/new?template=bug_report.yml)
+- **Request a new AI provider** (DeepSeek, Groq, Gemini, Copilot, etc.) → [Provider Request](https://github.com/merely04/ai-gauge/issues/new?template=provider_request.yml)
+- **Show off your setup** → [Discussions / Show and tell](https://github.com/merely04/ai-gauge/discussions/categories/show-and-tell)
+
+Read the [welcome post](https://github.com/merely04/ai-gauge/discussions/3) for the full triage map.
