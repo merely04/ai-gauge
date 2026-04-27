@@ -1,0 +1,43 @@
+# Test strip sequence: "✓ " prefix, "  " 2-space prefix, " (provider)" suffix
+# Verifies that walker output with checkmark + provider suffix is correctly
+# stripped to bare token source value before validation.
+
+# Test 1: claude-settings:foo (zai) with checkmark
+val="✓ claude-settings:foo (zai)"
+val="${val#✓ }"
+val="${val#  }"
+val="${val%% (*}"
+[[ "$val" == "claude-settings:foo" ]] || { echo "FAIL test1: '$val'"; exit 1; }
+echo "Test 1 (✓ + provider strip): PASS — got '$val'"
+
+# Test 2: claude-code with 2-space prefix (not selected)
+val="  claude-code"
+val="${val#✓ }"
+val="${val#  }"
+val="${val%% (*}"
+[[ "$val" == "claude-code" ]] || { echo "FAIL test2: '$val'"; exit 1; }
+echo "Test 2 (2-space strip): PASS — got '$val'"
+
+# Test 3: ✓ max (plan, no provider suffix)
+val="✓ max"
+val="${val#✓ }"
+val="${val#  }"
+[[ "$val" == "max" ]] || { echo "FAIL test3: '$val'"; exit 1; }
+echo "Test 3 (plan ✓ strip): PASS — got '$val'"
+
+# Test 4: ✓ bar-dots (displayMode)
+val="✓ bar-dots"
+val="${val#✓ }"
+val="${val#  }"
+[[ "$val" == "bar-dots" ]] || { echo "FAIL test4: '$val'"; exit 1; }
+echo "Test 4 (displayMode strip): PASS — got '$val'"
+
+# Test 5: regex check on stripped value
+val="claude-settings:foo"
+if [[ "$val" =~ ^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$ ]]; then
+    echo "Test 5 (TOKEN_SOURCE_PATTERN regex on stripped value): PASS"
+else
+    echo "FAIL test5"; exit 1
+fi
+
+echo "All strip sequence tests passed."

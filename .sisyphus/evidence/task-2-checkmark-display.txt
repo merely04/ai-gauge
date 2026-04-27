@@ -1,0 +1,10 @@
+🔑  Token Source: opencode
+📋  Plan: max
+🔄  Auto-check updates: ON
+🎨  Display mode: bar-dots
+  full
+  percent-only
+✓ bar-dots
+  number-bar
+  time-to-reset
+--- exit=0 ---

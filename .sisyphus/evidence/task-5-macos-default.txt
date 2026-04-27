@@ -1,0 +1,15 @@
+  Found bun at /opt/homebrew/Cellar/bun/1.3.13/bin/bun
+  Found ai-gauge-server at /Users/mere1y/dev/ai-gauge/bin/ai-gauge-server
+  Created default config → /var/folders/_b/j7ns7hh551z2m77qdz7gm4lr0000gn/T/tmp.tqIqPTEwRh/.config/ai-gauge/config.json (tokenSource: claude-code)
+[setup-dry-run] skip: macOS log + LaunchAgents directories
+[setup-dry-run] skip: xattr quarantine removal
+[setup-dry-run] skip: install server plist
+[setup-dry-run] skip: install menubar plist
+[setup-dry-run] skip: plutil -lint server plist
+[setup-dry-run] skip: plutil -lint menubar plist
+[setup-dry-run] skip: launchctl bootstrap server
+[setup-dry-run] skip: launchctl bootstrap menubar
+ai-gauge setup complete (macOS)
+Both LaunchAgents registered. Menubar icon should appear shortly.
+
+{"tokenSource":"claude-code","plan":"unknown","displayMode":"full","autoCheckUpdates":true}

@@ -7,6 +7,29 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-04-27
+
+### Added
+- **Auto-detect at first install** — `ai-gauge setup` now picks the right `tokenSource` automatically by probing credential files in order: `opencode` (`~/.local/share/opencode/auth.json`), `codex` (`~/.codex/auth.json`), `claude-code` (Keychain on macOS, `~/.claude/.credentials.json` on Linux). Multiple valid sources tiebreak by file mtime; equal mtimes fall back to fixed priority `opencode > codex > claude-code`. Runs only on first install — subsequent `ai-gauge setup` runs preserve the existing choice. Replaces the previous hardcoded `claude-code` default that caused users with OpenCode/Codex installed to start with the wrong source. Linux setup previously did not write `config.json` at all on first install, leaving the daemon to fall back to `claude-code` defaults — this is now fixed.
+- **Top-level "🔑 Token source" and "📋 Plan" submenus in Linux right-click menu** (parity with macOS Swift menubar). Previously these were two clicks deep inside "⚙ Settings". Now they appear directly in the top-level walker menu showing the current selection (e.g., `🔑 Token source: opencode`, `📋 Plan: max`).
+- **Walker checkmarks** — current selection is marked with `✓ ` prefix in Token Source / Plan / Display Mode submenus. Other items get a 2-space prefix for alignment. Matches the checkmark behavior already shipped in the macOS submenus.
+- **Provider suffix for `claude-settings:*` entries** in Linux walker — e.g., `claude-settings:foo (zai)` instead of bare `claude-settings:foo`. Matches macOS submenu behavior. Provider is detected from `ANTHROPIC_BASE_URL` in the settings file via the existing provider registry (z.ai, MiniMax, OpenRouter, Komilion, Packy, etc.).
+- New JS module `lib/detect-token-source.js` — pure ES module with full dependency injection (platform, env, paths, spawnImpl, fsImpl, isTokenValidImpl). CLI mode: `bun lib/detect-token-source.js` writes detected source to stdout, advisory message to stderr. Unified probe result shape with explicit `errorKind` (`enoent` / `malformed` / `eperm` / `unknown`) so the detector can distinguish "file missing" from "file corrupted".
+- New CLI flag `--format=walker` on `lib/cli-list-settings.js` emits walker-formatted output (`claude-settings:NAME (provider)`) directly, eliminating duplicate awk pipelines in bash callers.
+- Setup test harness env vars: `AIGAUGE_SETUP_DRY_RUN=1` (skips all side-effecting calls — systemctl, launchctl, waybar patching — but still writes config.json), `AIGAUGE_SETUP_PLATFORM=linux|darwin` (overrides platform detection so macOS dev machines can test the Linux path and vice versa), `AIGAUGE_DETECT_SKIP_KEYCHAIN=1` (skip macOS Keychain in detect — useful for headless/SSH sessions and CI).
+- Walker test harness env var `SUBMENU_DRY_RUN=1` (combined with `DRY_RUN=1`): submenu handlers in `bin/ai-gauge-config` print options that would go to walker instead of invoking `omarchy-launch-walker`. Backward-compatible with existing `DRY_RUN=1` contract — without `SUBMENU_DRY_RUN`, handlers still emit `WOULD_SET: <key>`.
+- 31 new tests: 22 in `test/detect-token-source.test.js` (DI happy paths, mtime tiebreaks, expired tokens, malformed JSON, Keychain timeout, env-driven `buildPaths`, fsImpl injection, 3-way priority middle), 9 in `test/menu-integration.test.js` (Bun.spawn integration tests for top-level menu items, routing, checkmarks, provider suffix, update-state rendering, backward compat).
+
+### Changed
+- Extracted 6 helpers to `lib/bash-helpers.sh` to remove ~80 lines of duplication across `bin/ai-gauge`, `bin/ai-gauge-menu`, `bin/ai-gauge-config`: `read_config_field`, `mark_current`, `strip_walker_decorations`, `ensure_default_config` (auto-detect block was duplicated 19 lines × 2 setup branches), plus `json_encode_value` (inline in `bin/ai-gauge-config`). The `lib/bash-helpers.sh` file grew from 23 to 88 lines but the call sites became one-liners.
+- `bin/ai-gauge-menu` is_macos guard now bypassable with `DRY_RUN=1` — allows testing the Linux menu path on macOS dev machines.
+- README documents auto-detect behavior, new top-level menu items, and the new test harness env vars.
+
+### Fixed
+- Replaced predictable `/tmp/aigauge-menu-opts.$$` temp file in `bin/ai-gauge-menu` Token source handler with direct `$(...)` variable capture (matches the adjacent Plan handler style). Eliminates symlink-attack vector on shared `/tmp`, removes UUOC `cat`, removes manual `rm -f` cleanup.
+- `bin/ai-gauge` setup no longer silences detect module's stderr with `2>/dev/null`. Users now see the helpful "Auto-detected: opencode (also available: codex). Run 'ai-gauge-config' to switch." advisory when multiple credential sources are present.
+- `test/menu-integration.test.js` `runScript` helper now sets `signal: AbortSignal.timeout(5000)` on `Bun.spawn` so a runaway script can't hang the test runner.
+
 ## [1.4.2] — 2026-04-25
 
 ### Fixed

@@ -1,0 +1,9 @@
+=== task-1-happy-opencode: HOME=/var/folders/_b/j7ns7hh551z2m77qdz7gm4lr0000gn/T/tmp.s3kjRAAsGZ (with valid opencode auth.json), AIGAUGE_DETECT_SKIP_KEYCHAIN=1 ===
+Command: HOME=$OC_HOME AIGAUGE_DETECT_SKIP_KEYCHAIN=1 bun lib/detect-token-source.js
+
+--- STDOUT ---
+opencode
+
+--- STDERR ---
+
+EXIT_CODE=0

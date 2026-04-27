@@ -214,9 +214,14 @@ Same data, native Mac UI. Lives in the menu bar (no Dock icon thanks to `LSUIEle
 **Menu** (right-click on Linux, click on macOS):
 
 - Copy usage summary (clipboard)
-- Change plan ▸ (max / pro / team / enterprise / unknown — current marked with ✓)
-- Change token source ▸ (Claude Code / OpenCode — current marked with ✓)
-- Refresh now
+- Raw data (clipboard)
+- 🔑 Token source: \<current\> ▸ (Linux: direct one-click to source selection with checkmarks)
+- 📋 Plan: \<current\> ▸ (Linux: direct one-click to plan selection with checkmarks)
+- 🎨 Display mode: \<current\> ▸ (inline submenu)
+- Change plan ▸ (macOS submenu — current marked with ✓)
+- Change token source ▸ (macOS submenu — current marked with ✓)
+- ⚙ Settings (advanced configuration)
+- ↻ Refresh now
 - Restart server
 - Reveal Config in Finder (macOS) / Open settings (Linux)
 - About AI Gauge (macOS — shows version, license, GitHub link)
@@ -228,6 +233,20 @@ Config file: `~/.config/ai-gauge/config.json`
 
 ```json
 {"tokenSource": "claude-code", "plan": "max"}
+```
+
+On first install, `ai-gauge setup` auto-detects which token source to use by checking which credential files exist:
+
+1. **OpenCode** (`~/.local/share/opencode/auth.json` on Linux, `~/Library/Application Support/opencode/auth.json` on macOS)
+2. **OpenAI Codex** (`~/.codex/auth.json` or `$CODEX_HOME/auth.json`)
+3. **Claude Code** (Keychain on macOS, `~/.claude/.credentials.json` on Linux)
+
+If multiple sources exist, the most recently modified one wins (with fixed priority `opencode > codex > claude-code` as a tiebreaker). Auto-detect runs **only on first install** — subsequent `ai-gauge setup` runs preserve your existing choice.
+
+To switch later, use the menu (macOS submenu / Linux right-click → "🔑 Token source") or CLI:
+
+```bash
+ai-gauge-config set tokenSource opencode
 ```
 
 | Field | Values | Description |
@@ -334,6 +353,14 @@ ai-gauge-config set autoCheckUpdates false
 **Session**: Set `NO_UPDATE_NOTIFIER=1` in the environment before starting the daemon.
 
 **CI environments**: Update checks are automatically skipped when any of these env vars are set: `CI`, `CONTINUOUS_INTEGRATION`, `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `JENKINS_HOME`, `BUILDKITE`, `DRONE`, `TRAVIS`.
+
+**Testing / development env vars** (not for production use):
+
+| Variable | Effect |
+|----------|--------|
+| `AIGAUGE_DETECT_SKIP_KEYCHAIN=1` | Skip macOS Keychain during auto-detect (useful in headless/SSH sessions) |
+| `AIGAUGE_SETUP_DRY_RUN=1` | Run setup without side effects — creates `~/.config/ai-gauge/config.json` only, skips systemctl/launchctl/waybar patching |
+| `AIGAUGE_SETUP_PLATFORM=<linux\|darwin>` | Override platform detection in setup scripts (testing only) |
 
 ### Dismiss a specific version
 

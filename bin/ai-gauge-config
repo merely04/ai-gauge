@@ -35,20 +35,23 @@ send_ws() {
     echo "$1" | bun "$SCRIPT_DIR/../lib/send-ws.js" 2>/dev/null
 }
 
+# Encode value as JSON: numbers/booleans bare, strings quoted.
+# Usage: json_encode_value <key> <value>
+json_encode_value() {
+    local key="$1" value="$2"
+    case "$key" in
+        autoCheckUpdates) printf '%s' "$value" ;;
+        *) printf '"%s"' "$value" ;;
+    esac
+}
+
 write_config_direct() {
     local key="$1"
     local value="$2"
+    local json_value
+    json_value=$(json_encode_value "$key" "$value")
     local current
     current=$(read_config)
-    local json_value
-    case "$key" in
-        autoCheckUpdates)
-            json_value="$value"
-            ;;
-        *)
-            json_value="\"$value\""
-            ;;
-    esac
     echo "$current" | jq ".${key} = ${json_value}" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
 }
 
@@ -64,22 +67,13 @@ apply_config() {
     local key="$1"
     local value="$2"
     local msg="$3"
+    local json_value
+    json_value=$(json_encode_value "$key" "$value")
 
     if [[ "${DRY_RUN:-0}" == "1" ]]; then
-        local json_value
-        case "$key" in
-            autoCheckUpdates) json_value="$value" ;;
-            *) json_value="\"$value\"" ;;
-        esac
         echo "WOULD_SEND: {\"type\":\"setConfig\",\"key\":\"$key\",\"value\":${json_value}}"
         return 0
     fi
-
-    local json_value
-    case "$key" in
-        autoCheckUpdates) json_value="$value" ;;
-        *) json_value="\"$value\"" ;;
-    esac
 
     if echo "{\"type\":\"setConfig\",\"key\":\"$key\",\"value\":${json_value}}" | bun "$SCRIPT_DIR/../lib/send-ws.js" 2>/dev/null; then
         [[ -n "$msg" ]] && notify-send -t 2000 -a "AI Gauge" "$msg" 2>/dev/null || true
@@ -168,7 +162,7 @@ fi
 current_source=$(get_field tokenSource)
 current_plan=$(get_field plan)
 current_auto_check_updates=$(get_field autoCheckUpdates)
-current_display_mode=$(jq -r '.displayMode // "full"' "$CONFIG_FILE" 2>/dev/null || echo "full")
+current_display_mode=$(read_config_field displayMode full "$CONFIG_FILE")
 
 items=(
     "🔑  Token Source: ${current_source:-claude-code}"
@@ -188,28 +182,52 @@ fi
 
 case "$choice" in
     *"Token Source"*)
+        # Build list: fixed OAuth sources + discovered claude-settings:* files (with provider suffix).
+        settings_list=""
+        if [[ -f "$SCRIPT_DIR/../lib/cli-list-settings.js" ]]; then
+            settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" --format=walker 2>/dev/null)
+        fi
+        all_options=("claude-code" "opencode" "codex")
+        if [[ -n "$settings_list" ]]; then
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                all_options+=("$line")
+            done <<< "$settings_list"
+        fi
+        marked_text=$(mark_current "${current_source:-claude-code}" "${all_options[@]}")
+
         if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            if [[ "${SUBMENU_DRY_RUN:-0}" == "1" ]]; then
+                printf '%s\n' "$marked_text"
+                exit 0
+            fi
             echo "WOULD_SET: tokenSource"
             exit 0
         fi
-        # Build list: fixed OAuth sources + discovered claude-settings:* files
-        settings_list=""
-        if [[ -f "$SCRIPT_DIR/../lib/cli-list-settings.js" ]]; then
-            settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" 2>/dev/null | awk -F'|' '{print "claude-settings:"$1}')
-        fi
-        new_source=$(printf '%s\n' "claude-code" "opencode" "codex" ${settings_list:+$settings_list} \
+
+        new_source=$(printf '%s\n' "$marked_text" \
             | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 250 -p "Token Source" 2>/dev/null
         ) || exit 0
+        new_source=$(strip_walker_decorations "$new_source")
         apply_config tokenSource "$new_source" "Token source: $new_source"
         ;;
     *"Plan"*)
+        plan_options=("max" "pro" "team" "enterprise" "unknown" "plus" "business" "edu")
+        marked_text=$(mark_current "${current_plan:-unknown}" "${plan_options[@]}")
+
         if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            if [[ "${SUBMENU_DRY_RUN:-0}" == "1" ]]; then
+                printf '%s\n' "$marked_text"
+                exit 0
+            fi
             echo "WOULD_SET: plan"
             exit 0
         fi
-        new_plan=$(printf '%s\n' "max" "pro" "team" "enterprise" "unknown" "plus" "business" "edu" \
+
+        new_plan=$(printf '%s\n' "$marked_text" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null
         ) || exit 0
+        new_plan=$(strip_walker_decorations "$new_plan")
         apply_config plan "$new_plan" "Plan: $new_plan"
         ;;
     *"Auto-check updates"*)
@@ -222,13 +240,22 @@ case "$choice" in
         echo "Set autoCheckUpdates = $new_auto_check_updates"
         ;;
     *"Display mode"*)
+        display_options=("full" "percent-only" "bar-dots" "number-bar" "time-to-reset")
+        marked_text=$(mark_current "${current_display_mode:-full}" "${display_options[@]}")
+
         if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            if [[ "${SUBMENU_DRY_RUN:-0}" == "1" ]]; then
+                printf '%s\n' "$marked_text"
+                exit 0
+            fi
             echo "WOULD_SET: displayMode"
             exit 0
         fi
-        new_display_mode=$(printf '%s\n' "full" "percent-only" "bar-dots" "number-bar" "time-to-reset" \
+
+        new_display_mode=$(printf '%s\n' "$marked_text" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Display mode" 2>/dev/null
         ) || exit 0
+        new_display_mode=$(strip_walker_decorations "$new_display_mode")
         apply_config displayMode "$new_display_mode" "Display mode: $new_display_mode"
         ;;
 esac
