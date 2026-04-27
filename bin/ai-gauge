@@ -354,7 +354,16 @@ CSS
         if command -v omarchy-restart-waybar &>/dev/null; then
             omarchy-restart-waybar
         else
-            killall -SIGUSR2 waybar 2>/dev/null || (killall waybar 2>/dev/null; waybar &disown) || true
+            # Hard restart (not SIGUSR2): SIGUSR2 only reloads waybar's config,
+            # but the process PATH is frozen at start time. If PATH or installed
+            # binary paths changed since waybar was started (e.g. bun install
+            # path migration after an ai-gauge upgrade), SIGUSR2 won't pick that
+            # up — waybar silently fails to find ai-gauge-waybar and the module
+            # disappears. A fresh process inherits the current PATH.
+            pkill -x waybar 2>/dev/null
+            sleep 0.3
+            setsid waybar >/dev/null 2>&1 &
+            disown 2>/dev/null || true
         fi
         echo "  Restarted waybar"
     }
@@ -486,11 +495,14 @@ with open(path, 'w') as f:
         echo "  Removed StreamDock plugin"
     fi
 
-    # Restart waybar
+    # Restart waybar (hard restart for consistency — see _restart_waybar in cmd_setup_linux)
     if command -v omarchy-restart-waybar &>/dev/null; then
         omarchy-restart-waybar
     else
-        killall -SIGUSR2 waybar 2>/dev/null || (killall waybar 2>/dev/null; waybar &disown) || true
+        pkill -x waybar 2>/dev/null
+        sleep 0.3
+        setsid waybar >/dev/null 2>&1 &
+        disown 2>/dev/null || true
     fi
     echo "  Restarted waybar"
 
