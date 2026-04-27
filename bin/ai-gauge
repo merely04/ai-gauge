@@ -232,8 +232,14 @@ cmd_setup_linux() {
     ensure_default_config "$CONFIG_FILE" "right-click menu '🔑 Token source'"
 
     _enable_systemd_service() {
-        systemctl --user enable --now ai-gauge-server 2>/dev/null || true
-        echo "  Enabled ai-gauge-server systemd service"
+        # Always enable (idempotent — refreshes symlinks if unit content changed).
+        systemctl --user enable ai-gauge-server 2>/dev/null || true
+        # Force restart so the daemon picks up any changes to ExecStart in the unit file.
+        # Using `restart` (not `enable --now`) because `--now` only starts if stopped;
+        # a running daemon would keep using the old ExecStart from before daemon-reload.
+        # `restart` also handles the cold-start case correctly (starts if not running).
+        systemctl --user restart ai-gauge-server 2>/dev/null || true
+        echo "  Enabled and (re)started ai-gauge-server systemd service"
     }
 
     _verify_systemd_service() {

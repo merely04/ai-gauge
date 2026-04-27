@@ -7,6 +7,11 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.5.2] — 2026-04-27
+
+### Fixed
+- **`ai-gauge setup` on Linux did not restart the daemon** when re-run after an upgrade. The setup function called `systemctl --user enable --now ai-gauge-server`, but `--now` only starts the service if it's currently stopped. A daemon already running with the **previous** `ExecStart` (e.g. pointing to a stale dev clone or an old install path) would keep running with the old code even though `daemon-reload` had loaded the new unit. The user-visible symptom: after `bun add -g ai-gauge@latest && ai-gauge setup`, `ai-gauge version` reported the new version, but the running daemon still used the old code — `setConfig` writes were ignored, broadcasts carried stale `meta.version`, and config.json could accumulate fields from old schemas (e.g. a `provider` key from pre-1.0 versions). Replaced with `systemctl --user enable ai-gauge-server` + `systemctl --user restart ai-gauge-server` so the new `ExecStart` is always picked up. `restart` also correctly handles the cold-start case (starts the daemon if it wasn't running), so behavior on first install is unchanged.
+
 ## [1.5.1] — 2026-04-27
 
 ### Fixed
