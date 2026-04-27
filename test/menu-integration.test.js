@@ -7,6 +7,7 @@ async function runScript(scriptPath, env = {}) {
     stdout: 'pipe',
     stderr: 'pipe',
     env: { ...process.env, ...env },
+    signal: AbortSignal.timeout(5000),
   });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
