@@ -1,0 +1,9 @@
+🔍 Check for updates
+↻  Refresh Now
+  Copy Usage
+  Raw Data
+🔑  Token source: opencode
+📋  Plan: max
+⚙  Settings
+🎨  Display mode: full
+WOULD_OPEN: plan-submenu

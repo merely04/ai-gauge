@@ -1,0 +1,8 @@
+🔍 Check for updates
+↻  Refresh Now
+  Copy Usage
+  Raw Data
+🔑  Token source: claude-code
+📋  Plan: unknown
+⚙  Settings
+🎨  Display mode: full

@@ -51,6 +51,8 @@ fi
 # Menu
 ITEMS=()
 current_display_mode=$(jq -r '.displayMode // "full"' "$HOME/.config/ai-gauge/config.json" 2>/dev/null || echo "full")
+current_source=$(jq -r '.tokenSource // "claude-code"' "$HOME/.config/ai-gauge/config.json" 2>/dev/null || echo "claude-code")
+current_plan=$(jq -r '.plan // "unknown"' "$HOME/.config/ai-gauge/config.json" 2>/dev/null || echo "unknown")
 
 # Update items
 if [[ "$UPDATE_INSTALLING" == "true" ]]; then
@@ -68,6 +70,8 @@ ITEMS+=("🔍 Check for updates")
 ITEMS+=("↻  Refresh Now")
 ITEMS+=("  Copy Usage")
 ITEMS+=("  Raw Data")
+ITEMS+=("🔑  Token source: ${current_source:-claude-code}")
+ITEMS+=("📋  Plan: ${current_plan:-unknown}")
 ITEMS+=("⚙  Settings")
 ITEMS+=("🎨  Display mode: ${current_display_mode}")
 
@@ -128,6 +132,58 @@ case "$SELECTED" in
         else
             notify-send -t 2000 -a "AI Gauge" "No data available yet"
         fi
+        ;;
+    *"Token source"*)
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            echo "WOULD_OPEN: token-source-submenu"
+            exit 0
+        fi
+        settings_list=""
+        if [[ -f "$SCRIPT_DIR/../lib/cli-list-settings.js" ]]; then
+            settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" 2>/dev/null \
+                | awk -F'|' '{ if ($2 != "" && $2 != "unknown") print "claude-settings:"$1" ("$2")"; else print "claude-settings:"$1 }')
+        fi
+        # Build options and mark current
+        {
+            printf '%s\n' "claude-code" "opencode" "codex"
+            [[ -n "$settings_list" ]] && printf '%s\n' "$settings_list"
+        } | while IFS= read -r o; do
+            bare="${o%% (*}"
+            if [[ "$bare" == "${current_source:-claude-code}" ]]; then
+                printf '✓ %s\n' "$o"
+            else
+                printf '  %s\n' "$o"
+            fi
+        done > /tmp/aigauge-menu-opts.$$
+        new_source=$(cat /tmp/aigauge-menu-opts.$$ | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 250 -p "Token source" 2>/dev/null) || { rm -f /tmp/aigauge-menu-opts.$$; exit 0; }
+        rm -f /tmp/aigauge-menu-opts.$$
+        new_source="${new_source#✓ }"
+        new_source="${new_source#  }"
+        new_source="${new_source%% (*}"
+        [[ -z "$new_source" ]] && exit 0
+        echo "{\"type\":\"setConfig\",\"key\":\"tokenSource\",\"value\":\"$new_source\"}" | bun "$SEND_WS" 2>/dev/null \
+            || "${SCRIPT_DIR}/ai-gauge-config" set tokenSource "$new_source"
+        notify-send -t 2000 -a "AI Gauge" "Token source: $new_source" 2>/dev/null || true
+        ;;
+    *"Plan"*)
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            echo "WOULD_OPEN: plan-submenu"
+            exit 0
+        fi
+        marked_plans=$(printf '%s\n' "max" "pro" "team" "enterprise" "unknown" "plus" "business" "edu" | while IFS= read -r p; do
+            if [[ "$p" == "${current_plan:-unknown}" ]]; then
+                printf '✓ %s\n' "$p"
+            else
+                printf '  %s\n' "$p"
+            fi
+        done)
+        new_plan=$(echo "$marked_plans" | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null) || exit 0
+        new_plan="${new_plan#✓ }"
+        new_plan="${new_plan#  }"
+        [[ -z "$new_plan" ]] && exit 0
+        echo "{\"type\":\"setConfig\",\"key\":\"plan\",\"value\":\"$new_plan\"}" | bun "$SEND_WS" 2>/dev/null \
+            || "${SCRIPT_DIR}/ai-gauge-config" set plan "$new_plan"
+        notify-send -t 2000 -a "AI Gauge" "Plan: $new_plan" 2>/dev/null || true
         ;;
     *"Settings"*)
         ai-gauge-config
