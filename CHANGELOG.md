@@ -7,6 +7,11 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.5.3] — 2026-04-27
+
+### Fixed
+- **Waybar module silently disappeared after some upgrades**: when `omarchy-restart-waybar` was unavailable (non-Omarchy systems, or systemd context where `command -v` doesn't see omarchy bin paths), the fallback used `killall -SIGUSR2 waybar`. SIGUSR2 reloads waybar's config but does NOT refresh the process's `PATH` — so if installed binary paths moved between waybar's start time and `ai-gauge setup` (e.g. bun's global install migrated from `~/.cache/.bun/bin/` to `~/.bun/bin/` after a mise upgrade, or stale symlinks were cleaned up), waybar would fail to find `ai-gauge-waybar` in PATH and the module would silently disappear from the bar. Replaced both fallback paths (in `cmd_setup_linux` and `cmd_uninstall`) with a hard restart (`pkill -x waybar` + `setsid waybar`) so the new process inherits the current PATH. Matches what `omarchy-restart-waybar` itself does (`pkill + setsid uwsm-app`).
+
 ## [1.5.2] — 2026-04-27
 
 ### Fixed
