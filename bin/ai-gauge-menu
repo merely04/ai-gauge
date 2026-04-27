@@ -140,8 +140,7 @@ case "$SELECTED" in
         fi
         settings_list=""
         if [[ -f "$SCRIPT_DIR/../lib/cli-list-settings.js" ]]; then
-            settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" 2>/dev/null \
-                | awk -F'|' '{ if ($2 != "" && $2 != "unknown") print "claude-settings:"$1" ("$2")"; else print "claude-settings:"$1 }')
+            settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" --format=walker 2>/dev/null)
         fi
         all_options=("claude-code" "opencode" "codex")
         if [[ -n "$settings_list" ]]; then
