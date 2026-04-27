@@ -1,0 +1,9 @@
+=== task-1-fallback: HOME=/var/folders/_b/j7ns7hh551z2m77qdz7gm4lr0000gn/T/tmp.Kiful3Uguh (empty), AIGAUGE_DETECT_SKIP_KEYCHAIN=1 ===
+Command: HOME=$FB_HOME AIGAUGE_DETECT_SKIP_KEYCHAIN=1 bun lib/detect-token-source.js
+
+--- STDOUT ---
+claude-code
+
+--- STDERR ---
+
+EXIT_CODE=0
