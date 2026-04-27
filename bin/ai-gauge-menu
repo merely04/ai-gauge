@@ -43,7 +43,7 @@ build_summary() {
 }
 
 # macOS: menu handled by Swift app
-if is_macos; then
+if is_macos && [[ "${DRY_RUN:-0}" != "1" ]]; then
     echo "Menu options available via menubar icon right-click (AI Gauge in menu bar)"
     exit 0
 fi
