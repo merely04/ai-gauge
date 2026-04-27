@@ -1,0 +1,6 @@
+  Found bun at /opt/homebrew/Cellar/bun/1.3.13/bin/bun
+  Found ai-gauge-server at /Users/mere1y/dev/ai-gauge/bin/ai-gauge-server
+  Created default config → /var/folders/_b/j7ns7hh551z2m77qdz7gm4lr0000gn/T/tmp.xEivp81GkI/.config/ai-gauge/config.json (tokenSource: opencode)
+Auto-detected token source: opencode
+(switch later via right-click menu '🔑 Token source' or: ai-gauge-config set tokenSource <source>)
+Done!

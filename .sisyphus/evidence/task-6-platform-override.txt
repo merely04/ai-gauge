@@ -1,0 +1,3 @@
+[setup-dry-run] skip: waybar config patch
+[setup-dry-run] skip: waybar css patch
+[setup-dry-run] skip: waybar restart

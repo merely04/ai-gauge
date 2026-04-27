@@ -1,0 +1,9 @@
+[setup-dry-run] skip: systemd user directory
+[setup-dry-run] skip: systemd service install
+[setup-dry-run] skip: systemctl --user daemon-reload
+[setup-dry-run] skip: systemctl --user enable --now ai-gauge-server
+[setup-dry-run] skip: systemctl active check
+[setup-dry-run] skip: streamdock plugin install
+[setup-dry-run] skip: waybar config patch
+[setup-dry-run] skip: waybar css patch
+[setup-dry-run] skip: waybar restart
