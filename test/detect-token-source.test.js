@@ -385,7 +385,7 @@ describe('detectTokenSource', () => {
     expect(result.reason).toBe('no-credentials-found');
   });
 
-  it('20. CODEX_HOME env override is honored via paths argument', async () => {
+  it('20. custom paths.codex argument is honored', async () => {
     tempDir = createTempDir();
     const customCodexHome = join(tempDir, 'custom-codex');
     ensureDir(customCodexHome);
@@ -405,5 +405,50 @@ describe('detectTokenSource', () => {
 
     expect(result.source).toBe('codex');
     expect(result.reason).toBe('only-valid');
+  });
+
+  it('21. CODEX_HOME env var drives path resolution via buildPaths', async () => {
+    tempDir = createTempDir();
+    const customCodexHome = join(tempDir, 'custom-codex-home');
+    ensureDir(customCodexHome);
+    writeFileSync(
+      join(customCodexHome, 'auth.json'),
+      JSON.stringify({
+        tokens: {
+          access_token: 'codex-via-env',
+          account_id: 'ACC',
+        },
+      })
+    );
+
+    // No `paths` provided — must rely on buildPaths(env)
+    const result = await detectTokenSource({
+      env: {
+        HOME: tempDir,
+        CODEX_HOME: customCodexHome,
+        AIGAUGE_DETECT_SKIP_KEYCHAIN: '1',
+      },
+      platform: 'linux',
+      isTokenValidImpl: () => true,
+    });
+
+    expect(result.source).toBe('codex');
+  });
+
+  it('22. HOME env var drives path resolution for opencode via buildPaths', async () => {
+    tempDir = createTempDir();
+    ensureDir(join(tempDir, '.local', 'share', 'opencode'));
+    writeFileSync(
+      join(tempDir, '.local', 'share', 'opencode', 'auth.json'),
+      JSON.stringify({ anthropic: { access: 'x', expires: 9999999999000 } })
+    );
+
+    const result = await detectTokenSource({
+      env: { HOME: tempDir, AIGAUGE_DETECT_SKIP_KEYCHAIN: '1' },
+      platform: 'linux',
+      isTokenValidImpl: () => true,
+    });
+
+    expect(result.source).toBe('opencode');
   });
 });
