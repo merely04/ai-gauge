@@ -7,6 +7,16 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.5.1] — 2026-04-27
+
+### Fixed
+- **Linux right-click menu had duplicated entries**: top-level "🔑 Token source", "📋 Plan", "🎨 Display mode" items shipped in 1.5.0 lived alongside an "⚙ Settings" entry that opened the same options inside another walker. This was a parity gap with the macOS Swift menubar (which has no Settings container — all options live at top level). Removed the "⚙ Settings" entry. The unique option inside it (`Auto-check updates`) is now also top-level as `🔄 Auto-check updates: ON/OFF` with click-to-toggle behavior matching the macOS On/Off submenu pattern.
+- **Display mode submenu was broken**: handler used `omarchy-launch-walker --placeholder ...` (no `--dmenu` flag), so walker opened its application-launcher mode instead of reading display-mode options from stdin. Selection didn't work. This was a pre-existing bug from before 1.5.0. Fixed by switching to the same `--dmenu --width 200 -p "Display mode"` pattern used by the Token source and Plan handlers. Now also shows `✓` checkmark on the currently active mode (parity with the other submenus).
+- **`read_config_field` returned default for boolean `false`**: jq's `//` operator treats `false` as null-ish, so `read_config_field autoCheckUpdates true` returned `"true"` for a config containing `"autoCheckUpdates": false`. Switched to `has($k) and (.[$k] != null)` so all JSON value types round-trip correctly. Affected only the new `autoCheckUpdates` reader (string fields like `tokenSource`/`plan`/`displayMode` were never `false` so dodged the bug).
+
+### Changed
+- 5 new menu integration tests covering Auto-check updates ON/OFF rendering, toggle behavior, Display mode submenu routing, and the absence of Settings entry.
+
 ## [1.5.0] — 2026-04-27
 
 ### Added
