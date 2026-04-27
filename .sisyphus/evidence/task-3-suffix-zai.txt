@@ -1,0 +1,9 @@
+🔑  Token Source: opencode
+📋  Plan: max
+🔄  Auto-check updates: ON
+🎨  Display mode: bar-dots
+  claude-code
+✓ opencode
+  codex
+  claude-settings:foo (zai)
+--- exit=0 ---
