@@ -143,20 +143,14 @@ case "$SELECTED" in
             settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" 2>/dev/null \
                 | awk -F'|' '{ if ($2 != "" && $2 != "unknown") print "claude-settings:"$1" ("$2")"; else print "claude-settings:"$1 }')
         fi
-        # Build options with checkmarks
-        marked_sources=$(
-            {
-                printf '%s\n' "claude-code" "opencode" "codex"
-                [[ -n "$settings_list" ]] && printf '%s\n' "$settings_list"
-            } | while IFS= read -r o; do
-                bare="${o%% (*}"
-                if [[ "$bare" == "${current_source:-claude-code}" ]]; then
-                    printf '✓ %s\n' "$o"
-                else
-                    printf '  %s\n' "$o"
-                fi
-            done
-        )
+        all_options=("claude-code" "opencode" "codex")
+        if [[ -n "$settings_list" ]]; then
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                all_options+=("$line")
+            done <<< "$settings_list"
+        fi
+        marked_sources=$(mark_current "${current_source:-claude-code}" "${all_options[@]}")
         new_source=$(printf '%s\n' "$marked_sources" | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 250 -p "Token source" 2>/dev/null) || exit 0
         new_source="${new_source#✓ }"
         new_source="${new_source#  }"
@@ -171,13 +165,8 @@ case "$SELECTED" in
             echo "WOULD_OPEN: plan-submenu"
             exit 0
         fi
-        marked_plans=$(printf '%s\n' "max" "pro" "team" "enterprise" "unknown" "plus" "business" "edu" | while IFS= read -r p; do
-            if [[ "$p" == "${current_plan:-unknown}" ]]; then
-                printf '✓ %s\n' "$p"
-            else
-                printf '  %s\n' "$p"
-            fi
-        done)
+        plan_options=("max" "pro" "team" "enterprise" "unknown" "plus" "business" "edu")
+        marked_plans=$(mark_current "${current_plan:-unknown}" "${plan_options[@]}")
         new_plan=$(echo "$marked_plans" | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null) || exit 0
         new_plan="${new_plan#✓ }"
         new_plan="${new_plan#  }"

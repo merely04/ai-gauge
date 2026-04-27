@@ -60,23 +60,6 @@ try_reload_server() {
     fi
 }
 
-mark_current() {
-    # Print items prefixed with "✓ " if they match the current selection,
-    # or two spaces otherwise. The " (provider)" suffix used by claude-settings:*
-    # entries is stripped before comparison so claude-settings:foo (zai) still
-    # matches current_source="claude-settings:foo".
-    local current="$1"; shift
-    local item bare
-    for item in "$@"; do
-        bare="${item%% (*}"
-        if [[ "$bare" == "$current" ]]; then
-            printf '✓ %s\n' "$item"
-        else
-            printf '  %s\n' "$item"
-        fi
-    done
-}
-
 apply_config() {
     local key="$1"
     local value="$2"

@@ -34,3 +34,20 @@ read_config_field() {
     printf '%s\n' "$default"
   fi
 }
+
+# Print items prefixed with "✓ " if they match current selection,
+# or two spaces otherwise. Strips " (provider)" suffix before comparison
+# so claude-settings:foo (zai) still matches current="claude-settings:foo".
+# Usage: mark_current <current> <item1> <item2> ...
+mark_current() {
+  local current="$1"; shift
+  local item bare
+  for item in "$@"; do
+    bare="${item%% (*}"
+    if [[ "$bare" == "$current" ]]; then
+      printf '✓ %s\n' "$item"
+    else
+      printf '  %s\n' "$item"
+    fi
+  done
+}
