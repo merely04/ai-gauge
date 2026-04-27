@@ -60,6 +60,23 @@ try_reload_server() {
     fi
 }
 
+mark_current() {
+    # Print items prefixed with "✓ " if they match the current selection,
+    # or two spaces otherwise. The " (provider)" suffix used by claude-settings:*
+    # entries is stripped before comparison so claude-settings:foo (zai) still
+    # matches current_source="claude-settings:foo".
+    local current="$1"; shift
+    local item bare
+    for item in "$@"; do
+        bare="${item%% (*}"
+        if [[ "$bare" == "$current" ]]; then
+            printf '✓ %s\n' "$item"
+        else
+            printf '  %s\n' "$item"
+        fi
+    done
+}
+
 apply_config() {
     local key="$1"
     local value="$2"
@@ -188,28 +205,58 @@ fi
 
 case "$choice" in
     *"Token Source"*)
+        # Build list: fixed OAuth sources + discovered claude-settings:* files (with provider suffix).
+        settings_list=""
+        if [[ -f "$SCRIPT_DIR/../lib/cli-list-settings.js" ]]; then
+            settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" 2>/dev/null \
+                | awk -F'|' '{ if ($2 != "" && $2 != "unknown") print "claude-settings:"$1" ("$2")"; else print "claude-settings:"$1 }')
+        fi
+        all_options=("claude-code" "opencode" "codex")
+        if [[ -n "$settings_list" ]]; then
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                all_options+=("$line")
+            done <<< "$settings_list"
+        fi
+        marked_text=$(mark_current "${current_source:-claude-code}" "${all_options[@]}")
+
         if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            if [[ "${SUBMENU_DRY_RUN:-0}" == "1" ]]; then
+                printf '%s\n' "$marked_text"
+                exit 0
+            fi
             echo "WOULD_SET: tokenSource"
             exit 0
         fi
-        # Build list: fixed OAuth sources + discovered claude-settings:* files
-        settings_list=""
-        if [[ -f "$SCRIPT_DIR/../lib/cli-list-settings.js" ]]; then
-            settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" 2>/dev/null | awk -F'|' '{print "claude-settings:"$1}')
-        fi
-        new_source=$(printf '%s\n' "claude-code" "opencode" "codex" ${settings_list:+$settings_list} \
+
+        new_source=$(printf '%s\n' "$marked_text" \
             | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 250 -p "Token Source" 2>/dev/null
         ) || exit 0
+        # Strip "✓ " prefix, "  " (2-space) prefix, and " (provider)" suffix before validation.
+        new_source="${new_source#✓ }"
+        new_source="${new_source#  }"
+        new_source="${new_source%% (*}"
         apply_config tokenSource "$new_source" "Token source: $new_source"
         ;;
     *"Plan"*)
+        plan_options=("max" "pro" "team" "enterprise" "unknown" "plus" "business" "edu")
+        marked_text=$(mark_current "${current_plan:-unknown}" "${plan_options[@]}")
+
         if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            if [[ "${SUBMENU_DRY_RUN:-0}" == "1" ]]; then
+                printf '%s\n' "$marked_text"
+                exit 0
+            fi
             echo "WOULD_SET: plan"
             exit 0
         fi
-        new_plan=$(printf '%s\n' "max" "pro" "team" "enterprise" "unknown" "plus" "business" "edu" \
+
+        new_plan=$(printf '%s\n' "$marked_text" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null
         ) || exit 0
+        # Strip "✓ " prefix and "  " (2-space) prefix before validation.
+        new_plan="${new_plan#✓ }"
+        new_plan="${new_plan#  }"
         apply_config plan "$new_plan" "Plan: $new_plan"
         ;;
     *"Auto-check updates"*)
@@ -222,13 +269,24 @@ case "$choice" in
         echo "Set autoCheckUpdates = $new_auto_check_updates"
         ;;
     *"Display mode"*)
+        display_options=("full" "percent-only" "bar-dots" "number-bar" "time-to-reset")
+        marked_text=$(mark_current "${current_display_mode:-full}" "${display_options[@]}")
+
         if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            if [[ "${SUBMENU_DRY_RUN:-0}" == "1" ]]; then
+                printf '%s\n' "$marked_text"
+                exit 0
+            fi
             echo "WOULD_SET: displayMode"
             exit 0
         fi
-        new_display_mode=$(printf '%s\n' "full" "percent-only" "bar-dots" "number-bar" "time-to-reset" \
+
+        new_display_mode=$(printf '%s\n' "$marked_text" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Display mode" 2>/dev/null
         ) || exit 0
+        # Strip "✓ " prefix and "  " (2-space) prefix before validation.
+        new_display_mode="${new_display_mode#✓ }"
+        new_display_mode="${new_display_mode#  }"
         apply_config displayMode "$new_display_mode" "Display mode: $new_display_mode"
         ;;
 esac

@@ -1,0 +1,6 @@
+🔑  Token Source: claude-code
+📋  Plan: unknown
+🔄  Auto-check updates: ON
+🎨  Display mode: full
+WOULD_SET: tokenSource
+--- exit=0 ---

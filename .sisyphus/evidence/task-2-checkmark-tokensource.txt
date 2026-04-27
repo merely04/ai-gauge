@@ -1,0 +1,8 @@
+🔑  Token Source: opencode
+📋  Plan: max
+🔄  Auto-check updates: ON
+🎨  Display mode: bar-dots
+  claude-code
+✓ opencode
+  codex
+--- exit=0 ---

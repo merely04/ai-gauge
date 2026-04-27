@@ -1,0 +1,13 @@
+🔑  Token Source: opencode
+📋  Plan: max
+🔄  Auto-check updates: ON
+🎨  Display mode: bar-dots
+✓ max
+  pro
+  team
+  enterprise
+  unknown
+  plus
+  business
+  edu
+--- exit=0 ---
