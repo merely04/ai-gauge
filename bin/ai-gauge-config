@@ -35,20 +35,23 @@ send_ws() {
     echo "$1" | bun "$SCRIPT_DIR/../lib/send-ws.js" 2>/dev/null
 }
 
+# Encode value as JSON: numbers/booleans bare, strings quoted.
+# Usage: json_encode_value <key> <value>
+json_encode_value() {
+    local key="$1" value="$2"
+    case "$key" in
+        autoCheckUpdates) printf '%s' "$value" ;;
+        *) printf '"%s"' "$value" ;;
+    esac
+}
+
 write_config_direct() {
     local key="$1"
     local value="$2"
+    local json_value
+    json_value=$(json_encode_value "$key" "$value")
     local current
     current=$(read_config)
-    local json_value
-    case "$key" in
-        autoCheckUpdates)
-            json_value="$value"
-            ;;
-        *)
-            json_value="\"$value\""
-            ;;
-    esac
     echo "$current" | jq ".${key} = ${json_value}" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
 }
 
@@ -64,22 +67,13 @@ apply_config() {
     local key="$1"
     local value="$2"
     local msg="$3"
+    local json_value
+    json_value=$(json_encode_value "$key" "$value")
 
     if [[ "${DRY_RUN:-0}" == "1" ]]; then
-        local json_value
-        case "$key" in
-            autoCheckUpdates) json_value="$value" ;;
-            *) json_value="\"$value\"" ;;
-        esac
         echo "WOULD_SEND: {\"type\":\"setConfig\",\"key\":\"$key\",\"value\":${json_value}}"
         return 0
     fi
-
-    local json_value
-    case "$key" in
-        autoCheckUpdates) json_value="$value" ;;
-        *) json_value="\"$value\"" ;;
-    esac
 
     if echo "{\"type\":\"setConfig\",\"key\":\"$key\",\"value\":${json_value}}" | bun "$SCRIPT_DIR/../lib/send-ws.js" 2>/dev/null; then
         [[ -n "$msg" ]] && notify-send -t 2000 -a "AI Gauge" "$msg" 2>/dev/null || true
