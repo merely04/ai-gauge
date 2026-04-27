@@ -61,3 +61,28 @@ strip_walker_decorations() {
   val="${val%% (*}"
   printf '%s\n' "$val"
 }
+
+# Ensure ~/.config/ai-gauge/config.json exists with auto-detected tokenSource.
+# Idempotent: skipped if file already exists. Requires LIB_DIR env var pointing
+# to the package's lib directory (so we can find detect-token-source.js).
+# Usage: ensure_default_config "$CONFIG_FILE" "menubar 'Change token source'"
+ensure_default_config() {
+  local config_file="$1"
+  local hint_path="$2"
+  if [[ -f "$config_file" ]]; then
+    echo "  Config already exists (skipped)"
+    return 0
+  fi
+  local detected
+  detected=$(bun "$LIB_DIR/detect-token-source.js" || echo claude-code)
+  if ! [[ "$detected" =~ ^(claude-code|opencode|codex)$ ]]; then
+    detected="claude-code"
+  fi
+  printf '{"tokenSource":"%s","plan":"unknown","displayMode":"full","autoCheckUpdates":true}\n' \
+    "$detected" > "$config_file"
+  echo "  Created default config → $config_file (tokenSource: $detected)"
+  if [[ "$detected" != "claude-code" ]]; then
+    echo "Auto-detected token source: $detected"
+    echo "(switch later via $hint_path or: ai-gauge-config set tokenSource <source>)"
+  fi
+}

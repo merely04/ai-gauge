@@ -120,21 +120,7 @@ cmd_setup_macos() {
     local CONFIG_DIR="$HOME/.config/ai-gauge"
     local CONFIG_FILE="$CONFIG_DIR/config.json"
     mkdir -p "$CONFIG_DIR"
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        local detected
-        detected=$(bun "$LIB_DIR/detect-token-source.js" || echo claude-code)
-        if ! [[ "$detected" =~ ^(claude-code|opencode|codex)$ ]]; then
-            detected="claude-code"
-        fi
-        printf '{"tokenSource":"%s","plan":"unknown","displayMode":"full","autoCheckUpdates":true}\n' "$detected" > "$CONFIG_FILE"
-        echo "  Created default config → $CONFIG_FILE (tokenSource: $detected)"
-        if [[ "$detected" != "claude-code" ]]; then
-            echo "Auto-detected token source: $detected"
-            echo "(switch later via menubar 'Change token source' or: ai-gauge-config set tokenSource <source>)"
-        fi
-    else
-        echo "  Config already exists (skipped)"
-    fi
+    ensure_default_config "$CONFIG_FILE" "menubar 'Change token source'"
 
     _clear_quarantine() {
         xattr -dr com.apple.quarantine "$APP_BUNDLE" 2>/dev/null || true
@@ -243,21 +229,7 @@ cmd_setup_linux() {
     local CONFIG_DIR="$HOME/.config/ai-gauge"
     local CONFIG_FILE="$CONFIG_DIR/config.json"
     mkdir -p "$CONFIG_DIR"
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        local detected
-        detected=$(bun "$LIB_DIR/detect-token-source.js" || echo claude-code)
-        if ! [[ "$detected" =~ ^(claude-code|opencode|codex)$ ]]; then
-            detected="claude-code"
-        fi
-        printf '{"tokenSource":"%s","plan":"unknown","displayMode":"full","autoCheckUpdates":true}\n' "$detected" > "$CONFIG_FILE"
-        echo "  Created default config → $CONFIG_FILE (tokenSource: $detected)"
-        if [[ "$detected" != "claude-code" ]]; then
-            echo "Auto-detected token source: $detected"
-            echo "(switch later via right-click menu '🔑 Token source' or: ai-gauge-config set tokenSource <source>)"
-        fi
-    else
-        echo "  Config already exists (skipped)"
-    fi
+    ensure_default_config "$CONFIG_FILE" "right-click menu '🔑 Token source'"
 
     _enable_systemd_service() {
         systemctl --user enable --now ai-gauge-server 2>/dev/null || true
