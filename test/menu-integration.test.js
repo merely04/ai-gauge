@@ -64,15 +64,15 @@ describe('ai-gauge-menu integration', () => {
     expect(stdout).toContain('📋  Plan: max');
   });
 
-  it('preserves existing items: Refresh, Copy, Raw, Settings, Display mode (regression)', async () => {
+  it('preserves existing items: Refresh, Copy, Raw, Display mode, Auto-check (regression)', async () => {
     homeDir = createFixtureHome(null);
     const { stdout, exitCode } = await runScript('bin/ai-gauge-menu', { HOME: homeDir, DRY_RUN: '1' });
     expect(exitCode).toBe(0);
     expect(stdout).toContain('↻  Refresh Now');
     expect(stdout).toContain('  Copy Usage');
     expect(stdout).toContain('  Raw Data');
-    expect(stdout).toContain('⚙  Settings');
     expect(stdout).toContain('🎨  Display mode:');
+    expect(stdout).toContain('🔄  Auto-check updates:');
   });
 
   it('routes 🔑 Token source selection to token-source-submenu (DRY_RUN)', async () => {
@@ -251,5 +251,66 @@ describe('ai-gauge-menu integration', () => {
     expect(stdout).toContain('✓ time-to-reset');
     expect(stdout).toContain('  full');
     expect(stdout).toContain('  bar-dots');
+  });
+
+  it('shows 🔄 Auto-check updates: ON when autoCheckUpdates=true in config', async () => {
+    homeDir = createFixtureHome({
+      tokenSource: 'claude-code',
+      plan: 'unknown',
+      displayMode: 'full',
+      autoCheckUpdates: true,
+    });
+    const { stdout, exitCode } = await runScript('bin/ai-gauge-menu', { HOME: homeDir, DRY_RUN: '1' });
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('🔄  Auto-check updates: ON');
+  });
+
+  it('shows 🔄 Auto-check updates: OFF when autoCheckUpdates=false in config', async () => {
+    homeDir = createFixtureHome({
+      tokenSource: 'claude-code',
+      plan: 'unknown',
+      displayMode: 'full',
+      autoCheckUpdates: false,
+    });
+    const { stdout, exitCode } = await runScript('bin/ai-gauge-menu', { HOME: homeDir, DRY_RUN: '1' });
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('🔄  Auto-check updates: OFF');
+  });
+
+  it('selecting Auto-check updates triggers toggle (DRY_RUN)', async () => {
+    homeDir = createFixtureHome({
+      tokenSource: 'claude-code',
+      plan: 'unknown',
+      displayMode: 'full',
+      autoCheckUpdates: true,
+    });
+    const { stdout, exitCode } = await runScript('bin/ai-gauge-menu', {
+      HOME: homeDir,
+      DRY_RUN: '1',
+      SELECTED_ITEM: '🔄  Auto-check updates: ON',
+    });
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('WOULD_TOGGLE: autoCheckUpdates -> false');
+  });
+
+  it('selecting Display mode routes to display-mode-submenu (DRY_RUN)', async () => {
+    homeDir = createFixtureHome({
+      tokenSource: 'claude-code',
+      plan: 'unknown',
+      displayMode: 'full',
+    });
+    const { stdout, exitCode } = await runScript('bin/ai-gauge-menu', {
+      HOME: homeDir,
+      DRY_RUN: '1',
+      SELECTED_ITEM: '🎨  Display mode: full',
+    });
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('WOULD_OPEN: display-mode-submenu');
+  });
+
+  it('does NOT show ⚙ Settings (removed for macOS parity)', async () => {
+    homeDir = createFixtureHome(null);
+    const { stdout } = await runScript('bin/ai-gauge-menu', { HOME: homeDir, DRY_RUN: '1' });
+    expect(stdout).not.toContain('⚙  Settings');
   });
 });

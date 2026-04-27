@@ -53,6 +53,7 @@ ITEMS=()
 current_display_mode=$(read_config_field displayMode full)
 current_source=$(read_config_field tokenSource claude-code)
 current_plan=$(read_config_field plan unknown)
+current_auto_check_updates=$(read_config_field autoCheckUpdates true)
 
 # Update items
 if [[ "$UPDATE_INSTALLING" == "true" ]]; then
@@ -72,8 +73,8 @@ ITEMS+=("  Copy Usage")
 ITEMS+=("  Raw Data")
 ITEMS+=("🔑  Token source: ${current_source:-claude-code}")
 ITEMS+=("📋  Plan: ${current_plan:-unknown}")
-ITEMS+=("⚙  Settings")
 ITEMS+=("🎨  Display mode: ${current_display_mode}")
+ITEMS+=("🔄  Auto-check updates: $(if [[ "${current_auto_check_updates:-true}" == "true" ]]; then echo ON; else echo OFF; fi)")
 
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
     printf '%s\n' "${ITEMS[@]}"
@@ -171,13 +172,32 @@ case "$SELECTED" in
             || "${SCRIPT_DIR}/ai-gauge-config" set plan "$new_plan"
         notify-send -t 2000 -a "AI Gauge" "Plan: $new_plan" 2>/dev/null || true
         ;;
-    *"Settings"*)
-        ai-gauge-config
+    *"Auto-check"*)
+        if [[ "${current_auto_check_updates:-true}" == "true" ]]; then
+            new_auto=false
+        else
+            new_auto=true
+        fi
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            echo "WOULD_TOGGLE: autoCheckUpdates -> $new_auto"
+            exit 0
+        fi
+        echo "{\"type\":\"setConfig\",\"key\":\"autoCheckUpdates\",\"value\":$new_auto}" | bun "$SEND_WS" 2>/dev/null \
+            || "${SCRIPT_DIR}/ai-gauge-config" set autoCheckUpdates "$new_auto"
+        notify-send -t 2000 -a "AI Gauge" "Auto-check updates: $new_auto" 2>/dev/null || true
         ;;
     *"Display mode"*)
-        choice=$(printf '%s\n' "full" "percent-only" "bar-dots" "number-bar" "time-to-reset" | omarchy-launch-walker --placeholder "Choose display mode" 2>/dev/null) || exit 0
-        if [[ -n "$choice" ]]; then
-            "${SCRIPT_DIR}/ai-gauge-config" set displayMode "$choice"
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            echo "WOULD_OPEN: display-mode-submenu"
+            exit 0
         fi
+        display_options=("full" "percent-only" "bar-dots" "number-bar" "time-to-reset")
+        marked_modes=$(mark_current "${current_display_mode:-full}" "${display_options[@]}")
+        new_mode=$(printf '%s\n' "$marked_modes" | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Display mode" 2>/dev/null) || exit 0
+        new_mode=$(strip_walker_decorations "$new_mode")
+        [[ -z "$new_mode" ]] && exit 0
+        echo "{\"type\":\"setConfig\",\"key\":\"displayMode\",\"value\":\"$new_mode\"}" | bun "$SEND_WS" 2>/dev/null \
+            || "${SCRIPT_DIR}/ai-gauge-config" set displayMode "$new_mode"
+        notify-send -t 2000 -a "AI Gauge" "Display mode: $new_mode" 2>/dev/null || true
         ;;
 esac
