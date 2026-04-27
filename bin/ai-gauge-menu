@@ -50,9 +50,9 @@ fi
 
 # Menu
 ITEMS=()
-current_display_mode=$(jq -r '.displayMode // "full"' "$HOME/.config/ai-gauge/config.json" 2>/dev/null || echo "full")
-current_source=$(jq -r '.tokenSource // "claude-code"' "$HOME/.config/ai-gauge/config.json" 2>/dev/null || echo "claude-code")
-current_plan=$(jq -r '.plan // "unknown"' "$HOME/.config/ai-gauge/config.json" 2>/dev/null || echo "unknown")
+current_display_mode=$(read_config_field displayMode full)
+current_source=$(read_config_field tokenSource claude-code)
+current_plan=$(read_config_field plan unknown)
 
 # Update items
 if [[ "$UPDATE_INSTALLING" == "true" ]]; then

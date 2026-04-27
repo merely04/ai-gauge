@@ -185,7 +185,7 @@ fi
 current_source=$(get_field tokenSource)
 current_plan=$(get_field plan)
 current_auto_check_updates=$(get_field autoCheckUpdates)
-current_display_mode=$(jq -r '.displayMode // "full"' "$CONFIG_FILE" 2>/dev/null || echo "full")
+current_display_mode=$(read_config_field displayMode full "$CONFIG_FILE")
 
 items=(
     "🔑  Token Source: ${current_source:-claude-code}"
