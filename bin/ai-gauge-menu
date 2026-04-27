@@ -152,9 +152,7 @@ case "$SELECTED" in
         fi
         marked_sources=$(mark_current "${current_source:-claude-code}" "${all_options[@]}")
         new_source=$(printf '%s\n' "$marked_sources" | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 250 -p "Token source" 2>/dev/null) || exit 0
-        new_source="${new_source#✓ }"
-        new_source="${new_source#  }"
-        new_source="${new_source%% (*}"
+        new_source=$(strip_walker_decorations "$new_source")
         [[ -z "$new_source" ]] && exit 0
         echo "{\"type\":\"setConfig\",\"key\":\"tokenSource\",\"value\":\"$new_source\"}" | bun "$SEND_WS" 2>/dev/null \
             || "${SCRIPT_DIR}/ai-gauge-config" set tokenSource "$new_source"
@@ -168,8 +166,7 @@ case "$SELECTED" in
         plan_options=("max" "pro" "team" "enterprise" "unknown" "plus" "business" "edu")
         marked_plans=$(mark_current "${current_plan:-unknown}" "${plan_options[@]}")
         new_plan=$(echo "$marked_plans" | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null) || exit 0
-        new_plan="${new_plan#✓ }"
-        new_plan="${new_plan#  }"
+        new_plan=$(strip_walker_decorations "$new_plan")
         [[ -z "$new_plan" ]] && exit 0
         echo "{\"type\":\"setConfig\",\"key\":\"plan\",\"value\":\"$new_plan\"}" | bun "$SEND_WS" 2>/dev/null \
             || "${SCRIPT_DIR}/ai-gauge-config" set plan "$new_plan"

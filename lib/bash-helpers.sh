@@ -51,3 +51,13 @@ mark_current() {
     fi
   done
 }
+
+# Strip walker decorations: "✓ " prefix, 2-space prefix, " (provider)" suffix.
+# Usage: clean=$(strip_walker_decorations "$raw")
+strip_walker_decorations() {
+  local val="$1"
+  val="${val#✓ }"
+  val="${val#  }"
+  val="${val%% (*}"
+  printf '%s\n' "$val"
+}

@@ -215,10 +215,7 @@ case "$choice" in
         new_source=$(printf '%s\n' "$marked_text" \
             | omarchy-launch-walker --dmenu --width 240 --minheight 1 --maxheight 250 -p "Token Source" 2>/dev/null
         ) || exit 0
-        # Strip "✓ " prefix, "  " (2-space) prefix, and " (provider)" suffix before validation.
-        new_source="${new_source#✓ }"
-        new_source="${new_source#  }"
-        new_source="${new_source%% (*}"
+        new_source=$(strip_walker_decorations "$new_source")
         apply_config tokenSource "$new_source" "Token source: $new_source"
         ;;
     *"Plan"*)
@@ -237,9 +234,7 @@ case "$choice" in
         new_plan=$(printf '%s\n' "$marked_text" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Plan" 2>/dev/null
         ) || exit 0
-        # Strip "✓ " prefix and "  " (2-space) prefix before validation.
-        new_plan="${new_plan#✓ }"
-        new_plan="${new_plan#  }"
+        new_plan=$(strip_walker_decorations "$new_plan")
         apply_config plan "$new_plan" "Plan: $new_plan"
         ;;
     *"Auto-check updates"*)
@@ -267,9 +262,7 @@ case "$choice" in
         new_display_mode=$(printf '%s\n' "$marked_text" \
             | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 200 -p "Display mode" 2>/dev/null
         ) || exit 0
-        # Strip "✓ " prefix and "  " (2-space) prefix before validation.
-        new_display_mode="${new_display_mode#✓ }"
-        new_display_mode="${new_display_mode#  }"
+        new_display_mode=$(strip_walker_decorations "$new_display_mode")
         apply_config displayMode "$new_display_mode" "Display mode: $new_display_mode"
         ;;
 esac
