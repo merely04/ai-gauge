@@ -122,7 +122,7 @@ cmd_setup_macos() {
     mkdir -p "$CONFIG_DIR"
     if [[ ! -f "$CONFIG_FILE" ]]; then
         local detected
-        detected=$(bun "$LIB_DIR/detect-token-source.js" 2>/dev/null || echo claude-code)
+        detected=$(bun "$LIB_DIR/detect-token-source.js" || echo claude-code)
         if ! [[ "$detected" =~ ^(claude-code|opencode|codex)$ ]]; then
             detected="claude-code"
         fi
@@ -245,7 +245,7 @@ cmd_setup_linux() {
     mkdir -p "$CONFIG_DIR"
     if [[ ! -f "$CONFIG_FILE" ]]; then
         local detected
-        detected=$(bun "$LIB_DIR/detect-token-source.js" 2>/dev/null || echo claude-code)
+        detected=$(bun "$LIB_DIR/detect-token-source.js" || echo claude-code)
         if ! [[ "$detected" =~ ^(claude-code|opencode|codex)$ ]]; then
             detected="claude-code"
         fi
