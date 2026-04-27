@@ -451,4 +451,99 @@ describe('detectTokenSource', () => {
 
     expect(result.source).toBe('opencode');
   });
+
+  it('23. three sources, identical mtime → priority opencode > codex > claude-code', async () => {
+    tempDir = createTempDir();
+    const paths = pathsFor(tempDir);
+
+    writeClaudeCodeFile(paths, { accessToken: 'cc', expiresAt: Date.now() + 3600000 });
+    writeOpencodePrimary(paths, { access: 'oc', expires: Date.now() + 3600000 });
+    writeCodex(paths, { access_token: 'cx', account_id: 'ACC' });
+
+    const fixedMtime = Date.now() - 60_000;
+    setMtime(paths.creds, fixedMtime);
+    setMtime(paths.opencodePrimary, fixedMtime);
+    setMtime(paths.codex, fixedMtime);
+
+    const result = await detectTokenSource(makeBaseDeps(tempDir, { paths }));
+
+    expect(result.source).toBe('opencode');
+    expect(result.reason).toBe('priority');
+    expect(result.candidates).toHaveLength(3);
+  });
+
+  it('24. codex vs claude-code at same mtime → codex wins (priority middle)', async () => {
+    tempDir = createTempDir();
+    const paths = pathsFor(tempDir);
+
+    writeClaudeCodeFile(paths, { accessToken: 'cc', expiresAt: Date.now() + 3600000 });
+    writeCodex(paths, { access_token: 'cx', account_id: 'ACC' });
+
+    const fixedMtime = Date.now() - 60_000;
+    setMtime(paths.creds, fixedMtime);
+    setMtime(paths.codex, fixedMtime);
+
+    const result = await detectTokenSource(makeBaseDeps(tempDir, { paths }));
+
+    expect(result.source).toBe('codex');
+    expect(result.reason).toBe('priority');
+    expect(result.candidates).toHaveLength(2);
+  });
+
+  it('25. fsImpl.statMtime and fsImpl.readJson are honored when injected', async () => {
+    const fsImpl = {
+      statMtime: (path) => {
+        if (path.includes('opencode')) return 2000;
+        if (path.includes('codex')) return 1000;
+        return 500;
+      },
+      readJson: async (path) => {
+        if (path.includes('opencode')) {
+          return { anthropic: { access: 'oc', expires: Date.now() + 3600000 } };
+        }
+        if (path.includes('codex')) {
+          return { tokens: { access_token: 'cx', account_id: 'ACC' } };
+        }
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      },
+    };
+
+    const result = await detectTokenSource({
+      platform: 'linux',
+      env: { HOME: '/fake/home', AIGAUGE_DETECT_SKIP_KEYCHAIN: '1' },
+      fsImpl,
+      isTokenValidImpl: () => true,
+    });
+
+    expect(result.source).toBe('opencode');
+    expect(result.reason).toBe('mtime-latest');
+    expect(result.candidates).toHaveLength(2);
+    const oc = result.candidates.find((c) => c.source === 'opencode');
+    const cx = result.candidates.find((c) => c.source === 'codex');
+    expect(oc.mtime).toBe(2000);
+    expect(cx.mtime).toBe(1000);
+  });
+
+  it('26. fsImpl.statMtime throwing returns mtime=0 (fallback path in getMtime)', async () => {
+    const fsImpl = {
+      statMtime: () => { throw new Error('stat failed'); },
+      readJson: async (path) => {
+        if (path.includes('opencode')) {
+          return { anthropic: { access: 'oc', expires: Date.now() + 3600000 } };
+        }
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      },
+    };
+
+    const result = await detectTokenSource({
+      platform: 'linux',
+      env: { HOME: '/fake/home', AIGAUGE_DETECT_SKIP_KEYCHAIN: '1' },
+      fsImpl,
+      isTokenValidImpl: () => true,
+    });
+
+    expect(result.source).toBe('opencode');
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0].mtime).toBe(0);
+  });
 });
