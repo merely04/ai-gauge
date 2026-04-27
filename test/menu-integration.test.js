@@ -147,4 +147,109 @@ describe('ai-gauge-menu integration', () => {
     expect(stdout).toContain('WOULD_SET: tokenSource');
     expect(stdout).not.toContain('✓');
   });
+
+  it('shows ✨ Update to v<X> when update-state.json has version', async () => {
+    homeDir = createFixtureHome({
+      tokenSource: 'claude-code',
+      plan: 'unknown',
+      displayMode: 'full',
+      autoCheckUpdates: true,
+    });
+    const xdgRuntime = join(homeDir, 'xdg-runtime');
+    const stateDir = join(xdgRuntime, 'ai-gauge');
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      join(stateDir, 'update-state.json'),
+      JSON.stringify({ version: '2.0.0', installing: false })
+    );
+
+    const { stdout, exitCode } = await runScript('bin/ai-gauge-menu', {
+      HOME: homeDir,
+      XDG_RUNTIME_DIR: xdgRuntime,
+      DRY_RUN: '1',
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('✨ Update to v2.0.0');
+    expect(stdout).not.toContain('⏳ Updating...');
+  });
+
+  it('shows ⏳ Updating... when update is in progress (and hides Update to vX)', async () => {
+    homeDir = createFixtureHome(null);
+    const xdgRuntime = join(homeDir, 'xdg-runtime');
+    const stateDir = join(xdgRuntime, 'ai-gauge');
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      join(stateDir, 'update-state.json'),
+      JSON.stringify({ version: '2.0.0', installing: true })
+    );
+
+    const { stdout, exitCode } = await runScript('bin/ai-gauge-menu', {
+      HOME: homeDir,
+      XDG_RUNTIME_DIR: xdgRuntime,
+      DRY_RUN: '1',
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('⏳ Updating...');
+    expect(stdout).not.toContain('✨ Update to');
+  });
+
+  it('omits update items when update-state.json absent', async () => {
+    homeDir = createFixtureHome(null);
+    const xdgRuntime = join(homeDir, 'xdg-runtime');
+    mkdirSync(xdgRuntime, { recursive: true });
+
+    const { stdout, exitCode } = await runScript('bin/ai-gauge-menu', {
+      HOME: homeDir,
+      XDG_RUNTIME_DIR: xdgRuntime,
+      DRY_RUN: '1',
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).not.toContain('✨ Update to');
+    expect(stdout).not.toContain('⏳ Updating...');
+    expect(stdout).toContain('🔍 Check for updates');
+  });
+
+  it('shows ✓ checkmark on currently selected plan in plan submenu', async () => {
+    homeDir = createFixtureHome({
+      tokenSource: 'claude-code',
+      plan: 'pro',
+      displayMode: 'full',
+    });
+
+    const { stdout, exitCode } = await runScript('bin/ai-gauge-config', {
+      HOME: homeDir,
+      DRY_RUN: '1',
+      SUBMENU_DRY_RUN: '1',
+      SELECTED_ITEM: '📋  Plan: pro',
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('✓ pro');
+    expect(stdout).toContain('  max');
+    expect(stdout).toContain('  team');
+    expect(stdout).toContain('  enterprise');
+  });
+
+  it('shows ✓ checkmark on currently selected display mode in display mode submenu', async () => {
+    homeDir = createFixtureHome({
+      tokenSource: 'claude-code',
+      plan: 'unknown',
+      displayMode: 'time-to-reset',
+    });
+
+    const { stdout, exitCode } = await runScript('bin/ai-gauge-config', {
+      HOME: homeDir,
+      DRY_RUN: '1',
+      SUBMENU_DRY_RUN: '1',
+      SELECTED_ITEM: '🎨  Display mode: time-to-reset',
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('✓ time-to-reset');
+    expect(stdout).toContain('  full');
+    expect(stdout).toContain('  bar-dots');
+  });
 });
