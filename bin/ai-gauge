@@ -67,6 +67,16 @@ cmd_status() {
     systemctl --user status ai-gauge-server --no-pager 2>&1 || true
 }
 
+# Test harness: skip side-effecting steps in dry-run mode
+setup_skip_or_run() {
+    local desc="$1"; shift
+    if [[ "${AIGAUGE_SETUP_DRY_RUN:-0}" == "1" ]]; then
+        printf '[setup-dry-run] skip: %s\n' "$desc" >&2
+        return 0
+    fi
+    "$@"
+}
+
 cmd_setup_macos() {
     local BUN_PATH
     BUN_PATH=$(command -v bun 2>/dev/null || true)
@@ -106,54 +116,83 @@ cmd_setup_macos() {
         fi
     fi
 
-    xattr -dr com.apple.quarantine "$APP_BUNDLE" 2>/dev/null || true
-    echo "  Cleared quarantine attribute on $APP_BUNDLE"
-
     # Create default config if missing (shared with Linux path)
     local CONFIG_DIR="$HOME/.config/ai-gauge"
     local CONFIG_FILE="$CONFIG_DIR/config.json"
     mkdir -p "$CONFIG_DIR"
     if [[ ! -f "$CONFIG_FILE" ]]; then
-        echo '{"tokenSource":"claude-code","plan":"unknown","displayMode":"full","autoCheckUpdates":true}' > "$CONFIG_FILE"
-        echo "  Created default config → $CONFIG_FILE"
+        local detected
+        detected=$(bun "$LIB_DIR/detect-token-source.js" 2>/dev/null || echo claude-code)
+        if ! [[ "$detected" =~ ^(claude-code|opencode|codex)$ ]]; then
+            detected="claude-code"
+        fi
+        printf '{"tokenSource":"%s","plan":"unknown","displayMode":"full","autoCheckUpdates":true}\n' "$detected" > "$CONFIG_FILE"
+        echo "  Created default config → $CONFIG_FILE (tokenSource: $detected)"
+        if [[ "$detected" != "claude-code" ]]; then
+            echo "Auto-detected token source: $detected"
+            echo "(switch later via menubar 'Change token source' or: ai-gauge-config set tokenSource <source>)"
+        fi
     else
         echo "  Config already exists (skipped)"
     fi
 
+    _clear_quarantine() {
+        xattr -dr com.apple.quarantine "$APP_BUNDLE" 2>/dev/null || true
+        echo "  Cleared quarantine attribute on $APP_BUNDLE"
+    }
+
     # Ensure required directories
-    mkdir -p "$LOG_DIR"
-    mkdir -p "$LAUNCH_AGENTS"
+    _ensure_macos_dirs() {
+        mkdir -p "$LOG_DIR"
+        mkdir -p "$LAUNCH_AGENTS"
+    }
+    setup_skip_or_run "macOS log + LaunchAgents directories" _ensure_macos_dirs
 
     # Generate server plist from template
     local SERVER_PLIST="$LAUNCH_AGENTS/com.ai-gauge.server.plist"
-    sed -e "s|__BUN_PATH__|$BUN_PATH|g" \
-        -e "s|__SERVER_PATH__|$SERVER_PATH|g" \
-        -e "s|__LOG_DIR__|$LOG_DIR|g" \
-        -e "s|__HOME__|$HOME|g" \
-        "$LIB_DIR/ai-gauge-server.plist.template" > "$SERVER_PLIST"
-    echo "  Installed $SERVER_PLIST"
+    _write_server_plist() {
+        sed -e "s|__BUN_PATH__|$BUN_PATH|g" \
+            -e "s|__SERVER_PATH__|$SERVER_PATH|g" \
+            -e "s|__LOG_DIR__|$LOG_DIR|g" \
+            -e "s|__HOME__|$HOME|g" \
+            "$LIB_DIR/ai-gauge-server.plist.template" > "$SERVER_PLIST"
+        echo "  Installed $SERVER_PLIST"
+    }
 
     # Generate menubar plist from template
     local MENUBAR_PLIST="$LAUNCH_AGENTS/com.ai-gauge.menubar.plist"
-    sed -e "s|__MENUBAR_APP_EXEC__|$APP_EXEC|g" \
-        -e "s|__LOG_DIR__|$LOG_DIR|g" \
-        -e "s|__HOME__|$HOME|g" \
-        "$LIB_DIR/ai-gauge-menubar.plist.template" > "$MENUBAR_PLIST"
-    echo "  Installed $MENUBAR_PLIST"
+    _write_menubar_plist() {
+        sed -e "s|__MENUBAR_APP_EXEC__|$APP_EXEC|g" \
+            -e "s|__LOG_DIR__|$LOG_DIR|g" \
+            -e "s|__HOME__|$HOME|g" \
+            "$LIB_DIR/ai-gauge-menubar.plist.template" > "$MENUBAR_PLIST"
+        echo "  Installed $MENUBAR_PLIST"
+    }
+
+    _bootstrap_server_agent() {
+        launchctl bootout "gui/${UID_VAL}/com.ai-gauge.server" 2>/dev/null || true
+        launchctl bootstrap "gui/${UID_VAL}" "$SERVER_PLIST"
+        echo "  Bootstrapped com.ai-gauge.server"
+    }
+
+    _bootstrap_menubar_agent() {
+        launchctl bootout "gui/${UID_VAL}/com.ai-gauge.menubar" 2>/dev/null || true
+        launchctl bootstrap "gui/${UID_VAL}" "$MENUBAR_PLIST"
+        echo "  Bootstrapped com.ai-gauge.menubar"
+    }
+
+    setup_skip_or_run "xattr quarantine removal" _clear_quarantine
+    setup_skip_or_run "install server plist" _write_server_plist
+    setup_skip_or_run "install menubar plist" _write_menubar_plist
 
     # Validate plists post-substitution
-    plutil -lint "$SERVER_PLIST"
-    plutil -lint "$MENUBAR_PLIST"
+    setup_skip_or_run "plutil -lint server plist" plutil -lint "$SERVER_PLIST"
+    setup_skip_or_run "plutil -lint menubar plist" plutil -lint "$MENUBAR_PLIST"
 
     # Bootstrap LaunchAgents (idempotent: bootout first, then bootstrap).
     # bootout may return non-zero if agent isn't already loaded — ignore.
-    launchctl bootout "gui/${UID_VAL}/com.ai-gauge.server" 2>/dev/null || true
-    launchctl bootstrap "gui/${UID_VAL}" "$SERVER_PLIST"
-    echo "  Bootstrapped com.ai-gauge.server"
-
-    launchctl bootout "gui/${UID_VAL}/com.ai-gauge.menubar" 2>/dev/null || true
-    launchctl bootstrap "gui/${UID_VAL}" "$MENUBAR_PLIST"
-    echo "  Bootstrapped com.ai-gauge.menubar"
+    setup_skip_or_run "launchctl bootstrap server" _bootstrap_server_agent
+    setup_skip_or_run "launchctl bootstrap menubar" _bootstrap_menubar_agent
 
     echo "ai-gauge setup complete (macOS)"
     echo "Both LaunchAgents registered. Menubar icon should appear shortly."
@@ -183,43 +222,73 @@ cmd_setup_linux() {
 
     # Install systemd service
     local SYSTEMD_DIR="$HOME/.config/systemd/user"
-    mkdir -p "$SYSTEMD_DIR"
     local SERVICE_SRC="$LIB_DIR/ai-gauge-server.service"
     local SERVICE_DST="$SYSTEMD_DIR/ai-gauge-server.service"
 
-    sed -e "s|__BUN_PATH__|$BUN_PATH|g" \
-        -e "s|__SERVER_PATH__|$SERVER_PATH|g" \
-        "$SERVICE_SRC" > "$SERVICE_DST"
+    _ensure_systemd_dir() {
+        mkdir -p "$SYSTEMD_DIR"
+    }
 
-    echo "  Installed ai-gauge-server.service → $SERVICE_DST"
+    _install_systemd_service() {
+        sed -e "s|__BUN_PATH__|$BUN_PATH|g" \
+            -e "s|__SERVER_PATH__|$SERVER_PATH|g" \
+            "$SERVICE_SRC" > "$SERVICE_DST"
+        echo "  Installed ai-gauge-server.service → $SERVICE_DST"
+    }
 
-    systemctl --user daemon-reload
-    systemctl --user enable --now ai-gauge-server 2>/dev/null || true
-    echo "  Enabled ai-gauge-server systemd service"
+    setup_skip_or_run "systemd user directory" _ensure_systemd_dir
+    setup_skip_or_run "systemd service install" _install_systemd_service
 
-    # Post-install verification (non-fatal)
-    sleep 2
-    if systemctl --user is-active --quiet ai-gauge-server; then
-        echo "  ai-gauge-server is active"
+    # Create default config if missing (write before daemon starts so it reads correct tokenSource)
+    local CONFIG_DIR="$HOME/.config/ai-gauge"
+    local CONFIG_FILE="$CONFIG_DIR/config.json"
+    mkdir -p "$CONFIG_DIR"
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        local detected
+        detected=$(bun "$LIB_DIR/detect-token-source.js" 2>/dev/null || echo claude-code)
+        if ! [[ "$detected" =~ ^(claude-code|opencode|codex)$ ]]; then
+            detected="claude-code"
+        fi
+        printf '{"tokenSource":"%s","plan":"unknown","displayMode":"full","autoCheckUpdates":true}\n' "$detected" > "$CONFIG_FILE"
+        echo "  Created default config → $CONFIG_FILE (tokenSource: $detected)"
+        if [[ "$detected" != "claude-code" ]]; then
+            echo "Auto-detected token source: $detected"
+            echo "(switch later via right-click menu '🔑 Token source' or: ai-gauge-config set tokenSource <source>)"
+        fi
     else
-        echo "  Warning: ai-gauge-server not yet active (may need a moment to start)"
+        echo "  Config already exists (skipped)"
     fi
 
-    # Install StreamDock plugin (if Wine + StreamDock are present)
-    local STREAMDOCK_PLUGINS="$HOME/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins"
-    local PLUGIN_SRC="$LIB_DIR/streamdock-plugin"
-    if [[ -d "$STREAMDOCK_PLUGINS" ]] && [[ -d "$PLUGIN_SRC" ]]; then
-        local PLUGIN_DST="$STREAMDOCK_PLUGINS/com.ai-gauge.streamdock.sdPlugin"
-        mkdir -p "$PLUGIN_DST"
-        cp -r "$PLUGIN_SRC/"* "$PLUGIN_DST/"
-        echo "  Installed StreamDock plugin → $PLUGIN_DST"
-    else
-        echo "  StreamDock not found (skipped plugin install)"
-    fi
+    _enable_systemd_service() {
+        systemctl --user enable --now ai-gauge-server 2>/dev/null || true
+        echo "  Enabled ai-gauge-server systemd service"
+    }
 
-    # Patch waybar config
-    if [[ -f "$WAYBAR_CONFIG" ]] && ! grep -q '"custom/ai-gauge"' "$WAYBAR_CONFIG"; then
-        python3 -c "
+    _verify_systemd_service() {
+        sleep 2
+        if systemctl --user is-active --quiet ai-gauge-server; then
+            echo "  ai-gauge-server is active"
+        else
+            echo "  Warning: ai-gauge-server not yet active (may need a moment to start)"
+        fi
+    }
+
+    _install_streamdock() {
+        local STREAMDOCK_PLUGINS="$HOME/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins"
+        local PLUGIN_SRC="$LIB_DIR/streamdock-plugin"
+        if [[ -d "$STREAMDOCK_PLUGINS" ]] && [[ -d "$PLUGIN_SRC" ]]; then
+            local PLUGIN_DST="$STREAMDOCK_PLUGINS/com.ai-gauge.streamdock.sdPlugin"
+            mkdir -p "$PLUGIN_DST"
+            cp -r "$PLUGIN_SRC/"* "$PLUGIN_DST/"
+            echo "  Installed StreamDock plugin → $PLUGIN_DST"
+        else
+            echo "  StreamDock not found (skipped plugin install)"
+        fi
+    }
+
+    _patch_waybar_config() {
+        if [[ -f "$WAYBAR_CONFIG" ]] && ! grep -q '"custom/ai-gauge"' "$WAYBAR_CONFIG"; then
+            python3 -c "
 import sys
 
 path = sys.argv[1]
@@ -250,14 +319,15 @@ text = before + '\n' + module_def + '\n' + text[last_brace:]
 with open(path, 'w') as f:
     f.write(text)
 " "$WAYBAR_CONFIG"
-        echo "  Patched waybar config.jsonc"
-    else
-        echo "  Config already patched (skipped)"
-    fi
+            echo "  Patched waybar config.jsonc"
+        else
+            echo "  Config already patched (skipped)"
+        fi
+    }
 
-    # Patch waybar CSS
-    if [[ -f "$WAYBAR_STYLE" ]] && ! grep -q '#custom-ai-gauge' "$WAYBAR_STYLE"; then
-        cat >> "$WAYBAR_STYLE" << 'CSS'
+    _patch_waybar_css() {
+        if [[ -f "$WAYBAR_STYLE" ]] && ! grep -q '#custom-ai-gauge' "$WAYBAR_STYLE"; then
+            cat >> "$WAYBAR_STYLE" << 'CSS'
 
 /* ai-gauge-start */
 #custom-ai-gauge {
@@ -296,29 +366,47 @@ with open(path, 'w') as f:
 }
 /* ai-gauge-end */
 CSS
-        echo "  Patched waybar style.css"
-    else
-        echo "  CSS already patched (skipped)"
-    fi
+            echo "  Patched waybar style.css"
+        else
+            echo "  CSS already patched (skipped)"
+        fi
+    }
 
-    # Restart waybar
-    if command -v omarchy-restart-waybar &>/dev/null; then
-        omarchy-restart-waybar
-    else
-        killall -SIGUSR2 waybar 2>/dev/null || (killall waybar 2>/dev/null; waybar &disown) || true
-    fi
-    echo "  Restarted waybar"
+    _restart_waybar() {
+        if command -v omarchy-restart-waybar &>/dev/null; then
+            omarchy-restart-waybar
+        else
+            killall -SIGUSR2 waybar 2>/dev/null || (killall waybar 2>/dev/null; waybar &disown) || true
+        fi
+        echo "  Restarted waybar"
+    }
+
+    setup_skip_or_run "systemctl --user daemon-reload" systemctl --user daemon-reload
+    setup_skip_or_run "systemctl --user enable --now ai-gauge-server" _enable_systemd_service
+
+    # Post-install verification (non-fatal)
+    setup_skip_or_run "systemctl active check" _verify_systemd_service
+    setup_skip_or_run "streamdock plugin install" _install_streamdock
+    setup_skip_or_run "waybar config patch" _patch_waybar_config
+    setup_skip_or_run "waybar css patch" _patch_waybar_css
+    setup_skip_or_run "waybar restart" _restart_waybar
 
     echo "Done!"
 }
 
 cmd_setup() {
-    if is_macos; then
+    local platform="${AIGAUGE_SETUP_PLATFORM:-}"
+    if [[ -n "$platform" ]]; then
+        case "$platform" in
+            darwin|macos) cmd_setup_macos ;;
+            linux) cmd_setup_linux ;;
+            *) echo "Invalid AIGAUGE_SETUP_PLATFORM: $platform" >&2; exit 1 ;;
+        esac
+    elif is_macos; then
         cmd_setup_macos
-        return $?
+    else
+        cmd_setup_linux
     fi
-
-    cmd_setup_linux
 }
 
 cmd_uninstall() {

@@ -1,0 +1,8 @@
+[setup-dry-run] skip: macOS log + LaunchAgents directories
+[setup-dry-run] skip: xattr quarantine removal
+[setup-dry-run] skip: install server plist
+[setup-dry-run] skip: install menubar plist
+[setup-dry-run] skip: plutil -lint server plist
+[setup-dry-run] skip: plutil -lint menubar plist
+[setup-dry-run] skip: launchctl bootstrap server
+[setup-dry-run] skip: launchctl bootstrap menubar
