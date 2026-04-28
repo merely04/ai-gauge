@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-linecap="round">
+  <!-- gauge track (low-contrast on any backdrop) -->
+  <path d="M5 14A7 7 0 0 1 19 14" stroke="#888888" stroke-opacity="0.35" stroke-width="2.4"/>
+  <!-- gauge fill: full semicircle, solid critical red -->
+  <path d="M5 14A7 7 0 0 1 19 14" stroke="#a55555" stroke-width="2.4"/>
+  <!-- needle pegged horizontal-right (100% mark) -->
+  <line x1="12" y1="14" x2="18" y2="14" stroke="#FFFFFF" stroke-width="1.4"/>
+  <!-- center hub: white core + dark hairline (legible on Breeze Light + Dark) -->
+  <circle cx="12" cy="14" r="1.4" fill="#FFFFFF" stroke="#1A1A22" stroke-width="0.4"/>
+</svg>
