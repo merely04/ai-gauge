@@ -7,6 +7,10 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **SNI tray indicator for KDE Plasma 6 and non-Waybar Linux DEs**: new `bin/ai-gauge-tray` Bun WebSocket client that spawns a Python helper (`lib/sni-tray/sni-helper.py`) hosting `org.kde.StatusNotifierItem` and `com.canonical.dbusmenu` D-Bus services. Adds tray icon + tooltip + right-click menu with usage breakdown + actions (parity with macOS Swift menubar). Supports KDE Plasma 6, Cinnamon 6+, XFCE 4.18+, MATE 1.26+, Budgie 10.7+ — any Linux DE with an SNI watcher. Co-exists with Waybar — install both if you want. Setup auto-detects watcher availability + dbus-python + PyGObject; skips installation cleanly otherwise. 6 SVG icons in `lib/sni-tray/icons/`. New systemd user unit `ai-gauge-tray.service`. IPC contract documented in `lib/sni-tray/IPC.md`. 4 new test files (`test/tray-menu.test.js`, `test/sni-helper.test.js`, `test/ai-gauge-tray.test.js`, `test/sni-tray-setup.test.js`); 93 new tests; full suite 725 passing.
+
 ## [1.6.1] — 2026-04-28
 
 ### Fixed

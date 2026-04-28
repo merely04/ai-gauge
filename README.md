@@ -5,7 +5,7 @@
 
 <p align="center">
   Real-time usage monitor for Claude Code, OpenCode and OpenAI Codex. Tracks rate limits with countdown timers and desktop notifications.<br>
-  Runs on Linux (Waybar) and macOS (native menubar app).
+  Runs on Linux (Waybar + SNI system tray) and macOS (native menubar app).
 </p>
 
 <p align="center">
@@ -24,6 +24,7 @@
 ## Features
 
 - **Waybar module** (Linux) — live 5-hour %, weekly %, reset countdown in your status bar
+- **SNI tray** (Linux KDE Plasma 6, Cinnamon, XFCE, MATE, Budgie) — usage in your system tray on any desktop with a `StatusNotifierItem` watcher
 - **Native menubar app** (macOS) — Swift MenuBarExtra, same data in your menu bar
 - **Desktop notifications** — alert at 80% usage, auto-clear below 50%
 - **Right-click menu** — refresh, copy stats, change plan / token source with checkmarks (macOS), open settings
@@ -43,6 +44,7 @@ A few other tools do similar things. Which one fits depends on what you actually
 |---|---|---|---|---|
 | Native macOS menubar app | ✅ Swift MenuBarExtra | — | — | — |
 | Linux Waybar module | ✅ | ✅ | ✅ | ✅ |
+| KDE Plasma / system tray support | ✅ (KDE Plasma 6, Cinnamon, XFCE, MATE, Budgie) | — | — | — |
 | Real-time WebSocket push | ✅ (60s poll, instant broadcast) | — polling | — polling | — polling |
 | Supported providers | 6 real + 2 stubs | 4 | 3 | 2 |
 | GitHub Copilot support | ✅ | ✅ | — | — |
@@ -197,6 +199,22 @@ The current plan and token source are reflected as **checkmarks in the submenu**
 | warning | yellow | 50-79% |
 | critical | red | >= 80% (sends desktop notification once) |
 | waiting | very dim | Connecting to server (starting up or server down) |
+
+## SNI Tray (KDE Plasma / non-Waybar Linux)
+
+`ai-gauge-tray` is a Bun WebSocket client that spawns a Python helper (`lib/sni-tray/sni-helper.py`) hosting `org.kde.StatusNotifierItem` and `com.canonical.dbusmenu` D-Bus services. It connects to the same `ws://localhost:19876` broadcast as Waybar and the macOS menubar app, so all three clients can run simultaneously — install both Waybar and the SNI tray if you want both.
+
+<!-- TODO: assets/tray.png after Wave 5 manual QA -->
+
+**Interaction:**
+
+- **Left-click** — opens `ai-gauge-config` settings UI
+- **Right-click** — menu with usage breakdown + actions (Refresh, Restart server, Plan / Token source / Display mode submenus, Quit)
+- **Hover tooltip** — multi-line usage text matching the Waybar tooltip format
+
+**Compatibility:** KDE Plasma 6, Cinnamon 6+, XFCE 4.18+, MATE 1.26+, Budgie 10.7+ — any Linux desktop with an SNI watcher. GNOME without the AppIndicator/KStatusNotifier extension does not have an SNI watcher; the tray won't appear there.
+
+**Setup auto-detects** — `ai-gauge setup` checks for `gdbus`, `python3-dbus`, and `python3-gi` (PyGObject) plus a running SNI watcher. If all three are present, it installs the `ai-gauge-tray.service` systemd user unit and 6 SVG icons to `~/.local/share/icons/hicolor/scalable/apps/`. If any dependency is missing, setup prints an informative message and continues without installing the tray — no KDE? No problem.
 
 ## macOS — Native Menu Bar
 
@@ -453,10 +471,14 @@ The server writes `usage.json` atomically to `$XDG_RUNTIME_DIR/ai-gauge/` on Lin
 | `bin/ai-gauge` | Main CLI — setup, uninstall, status |
 | `bin/ai-gauge-server` | WebSocket server — fetches Anthropic API, broadcasts to clients (port 19876) |
 | `bin/ai-gauge-waybar` | Thin WS client — renders waybar JSON from server data (Linux) |
+| `bin/ai-gauge-tray` | Bun WS client — bridges WebSocket broadcast to D-Bus SNI (Linux KDE Plasma / non-Waybar) |
 | `bin/ai-gauge-menubar` | Native Swift menubar app binary — universal arm64+x86_64 (macOS) |
 | `bin/ai-gauge-menu` | Click menu — refresh, copy, settings |
 | `bin/ai-gauge-config` | Settings CLI/UI — token source, plan name |
 | `lib/ai-gauge-server.service` | systemd user service unit template (Linux) |
+| `lib/ai-gauge-tray.service` | systemd user-service template for the SNI tray (Linux) |
+| `lib/sni-tray/sni-helper.py` | Python child process hosting `org.kde.StatusNotifierItem` + `com.canonical.dbusmenu` D-Bus services |
+| `lib/sni-tray/icons/*.svg` | 6 hand-authored SVG icons for SNI tray states |
 | `lib/ai-gauge-server.plist.template` | launchd LaunchAgent plist template (macOS) |
 | `lib/ai-gauge-menubar.plist.template` | launchd plist for the menubar app (macOS) |
 | `bin/AIGauge.app/` | Pre-built macOS app bundle (universal arm64+x86_64, ad-hoc signed) |
