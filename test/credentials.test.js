@@ -271,6 +271,122 @@ describe('Credential Reading', () => {
     expect(result).not.toBeNull();
     expect(result.secondary).toBeNull();
   });
+
+  it('extracts copilotSecondary creds from opencode auth.json with github-copilot oauth block', async () => {
+    tempDir = createTempDir();
+    const primaryPath = join(tempDir, '.local', 'share', 'opencode', 'auth.json');
+    const macPath = join(tempDir, 'Library', 'Application Support', 'opencode', 'auth.json');
+    ensureDir(join(tempDir, '.local', 'share', 'opencode'));
+
+    writeFileSync(primaryPath, JSON.stringify({
+      anthropic: { type: 'oauth', access: 'ant-token', expires: Date.now() + 3600000 },
+      'github-copilot': {
+        type: 'oauth',
+        refresh: 'gho_realtoken123',
+        access: 'gho_realtoken123',
+        expires: 0,
+      },
+    }));
+
+    const result = await readOpenCodeCredentials(primaryPath, macPath);
+
+    expect(result).not.toBeNull();
+    expect(result.token).toBe('ant-token');
+    expect(result.copilotSecondary).not.toBeNull();
+    expect(result.copilotSecondary.provider).toBe('copilot');
+    expect(result.copilotSecondary.token).toBe('gho_realtoken123');
+    expect(result.copilotSecondary.expiresAt).toBeNull();
+  });
+
+  it('extracts copilotSecondary with non-zero expires timestamp preserved', async () => {
+    tempDir = createTempDir();
+    const primaryPath = join(tempDir, '.local', 'share', 'opencode', 'auth.json');
+    const macPath = join(tempDir, 'Library', 'Application Support', 'opencode', 'auth.json');
+    ensureDir(join(tempDir, '.local', 'share', 'opencode'));
+
+    writeFileSync(primaryPath, JSON.stringify({
+      anthropic: { type: 'oauth', access: 'ant-token', expires: Date.now() + 3600000 },
+      'github-copilot': {
+        type: 'oauth',
+        refresh: 'gho_explicit_expiry',
+        access: 'gho_explicit_expiry',
+        expires: 1735689600,
+      },
+    }));
+
+    const result = await readOpenCodeCredentials(primaryPath, macPath);
+
+    expect(result.copilotSecondary).not.toBeNull();
+    expect(result.copilotSecondary.token).toBe('gho_explicit_expiry');
+    expect(result.copilotSecondary.expiresAt).toBe(1735689600);
+  });
+
+  it('returns copilotSecondary=null when github-copilot block is api-key (not oauth)', async () => {
+    tempDir = createTempDir();
+    const primaryPath = join(tempDir, '.local', 'share', 'opencode', 'auth.json');
+    const macPath = join(tempDir, 'Library', 'Application Support', 'opencode', 'auth.json');
+    ensureDir(join(tempDir, '.local', 'share', 'opencode'));
+
+    writeFileSync(primaryPath, JSON.stringify({
+      anthropic: { type: 'oauth', access: 'ant-token', expires: Date.now() + 3600000 },
+      'github-copilot': { type: 'api', key: 'gho_xxx' },
+    }));
+
+    const result = await readOpenCodeCredentials(primaryPath, macPath);
+    expect(result.copilotSecondary).toBeNull();
+  });
+
+  it('returns copilotSecondary=null when github-copilot has no refresh token', async () => {
+    tempDir = createTempDir();
+    const primaryPath = join(tempDir, '.local', 'share', 'opencode', 'auth.json');
+    const macPath = join(tempDir, 'Library', 'Application Support', 'opencode', 'auth.json');
+    ensureDir(join(tempDir, '.local', 'share', 'opencode'));
+
+    writeFileSync(primaryPath, JSON.stringify({
+      anthropic: { type: 'oauth', access: 'ant-token', expires: Date.now() + 3600000 },
+      'github-copilot': { type: 'oauth', expires: 0 },
+    }));
+
+    const result = await readOpenCodeCredentials(primaryPath, macPath);
+    expect(result.copilotSecondary).toBeNull();
+  });
+
+  it('returns copilotSecondary=null when no github-copilot block at all', async () => {
+    tempDir = createTempDir();
+    const primaryPath = join(tempDir, '.local', 'share', 'opencode', 'auth.json');
+    const macPath = join(tempDir, 'Library', 'Application Support', 'opencode', 'auth.json');
+    ensureDir(join(tempDir, '.local', 'share', 'opencode'));
+
+    writeFileSync(primaryPath, JSON.stringify({
+      anthropic: { type: 'oauth', access: 'ant-token', expires: Date.now() + 3600000 },
+    }));
+
+    const result = await readOpenCodeCredentials(primaryPath, macPath);
+    expect(result).not.toBeNull();
+    expect(result.copilotSecondary).toBeNull();
+  });
+
+  it('extracts BOTH secondary (codex) AND copilotSecondary (copilot) when all three providers present', async () => {
+    tempDir = createTempDir();
+    const primaryPath = join(tempDir, '.local', 'share', 'opencode', 'auth.json');
+    const macPath = join(tempDir, 'Library', 'Application Support', 'opencode', 'auth.json');
+    ensureDir(join(tempDir, '.local', 'share', 'opencode'));
+
+    writeFileSync(primaryPath, JSON.stringify({
+      anthropic: { type: 'oauth', access: 'ant-token', expires: Date.now() + 3600000 },
+      openai: { type: 'oauth', access: 'oai-token', accountId: 'user-codex', expires: Date.now() + 7200000, refresh: 'r' },
+      'github-copilot': { type: 'oauth', refresh: 'gho_token', access: 'gho_token', expires: 0 },
+    }));
+
+    const result = await readOpenCodeCredentials(primaryPath, macPath);
+
+    expect(result.token).toBe('ant-token');
+    expect(result.secondary).not.toBeNull();
+    expect(result.secondary.provider).toBe('codex');
+    expect(result.copilotSecondary).not.toBeNull();
+    expect(result.copilotSecondary.provider).toBe('copilot');
+    expect(result.copilotSecondary.token).toBe('gho_token');
+  });
 });
 
 describe('readClaudeCodeCredentials — macOS Keychain', () => {

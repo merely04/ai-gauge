@@ -29,7 +29,7 @@
 - **Right-click menu** — refresh, copy stats, change plan / token source with checkmarks (macOS), open settings
 - **StreamDock plugin** — usage stats on a physical key (Fifine AmpliGame D6)
 - **Multiple token sources** — Claude Code CLI, OpenCode, or OpenAI Codex CLI
-- **OpenCode dual mode** — when OpenCode has both Anthropic and OpenAI OAuth logins, the tooltip shows Claude AND Codex usage side-by-side in a single view
+- **OpenCode tri-mode** — when OpenCode has Anthropic, OpenAI, and/or GitHub Copilot OAuth logins, the tooltip shows all three providers' usage side-by-side in a single view
 - **Codex JSONL fallback** — if `chatgpt.com/wham/usage` is unreachable, parses `~/.codex/sessions/*.jsonl` for the latest rate-limit snapshot
 - **WebSocket architecture** — one server broadcasts to all clients in real time
 - **systemd / launchd service** — starts on login, auto-restarts on failure
@@ -45,11 +45,11 @@ A few other tools do similar things. Which one fits depends on what you actually
 | Linux Waybar module | ✅ | ✅ | ✅ | ✅ |
 | Real-time WebSocket push | ✅ (60s poll, instant broadcast) | — polling | — polling | — polling |
 | Supported providers | 6 real + 2 stubs | 4 | 3 | 2 |
-| GitHub Copilot support | — | ✅ | — | — |
+| GitHub Copilot support | ✅ | ✅ | — | — |
 | Gemini CLI support | — | — | ✅ | — |
 | Browser cookie auth (no API keys) | — | ✅ Chrome/Firefox | — | — |
 | StreamDock physical-key plugin | ✅ Fifine D6 | — | — | — |
-| Claude + Codex side-by-side view | ✅ OpenCode dual mode | — | — | — |
+| Claude + Codex + Copilot side-by-side view | ✅ OpenCode tri-mode | — | — | — |
 | Auto-update system | ✅ npm registry | — | — | — |
 | Zero npm runtime dependencies | ✅ | — (browser_cookie3) | ✅ pure Bash | — |
 | Stack | Bun JS + Swift | Python | Bash + jq | TypeScript + Bun |
@@ -67,7 +67,7 @@ A few other tools do similar things. Which one fits depends on what you actually
 
 ### Where competitors are stronger
 
-- **NihilDigit/waybar-ai-usage** is the right pick if you use GitHub Copilot or want browser-cookie auth (no credential files to manage, works with Chrome/Firefox sessions out of the box)
+- **NihilDigit/waybar-ai-usage** is the right pick if you want browser-cookie auth (no credential files to manage, works with Chrome/Firefox sessions out of the box)
 - **komagata/ai-quota-waybar** is the right pick if you use Gemini CLI and want a zero-dependency pure Bash solution with no Bun requirement
 - **andresreibel/ClaudeBar** has a clean click-to-toggle UX between Claude and Codex and handles 429 backoff gracefully with cached payloads
 
@@ -160,7 +160,7 @@ Sonnet:  0%
 Extra: $171.22/$200 (86%)
 ```
 
-When `tokenSource: opencode` and your OpenCode auth file carries both Anthropic and OpenAI OAuth, you see both providers in one tooltip:
+When `tokenSource: opencode` and your OpenCode auth file carries any combination of Anthropic, OpenAI, and GitHub Copilot OAuth logins, the tooltip shows all of them side-by-side in a single view:
 
 ![multi-provider tooltip](assets/macos-multi-provider.png)
 
@@ -176,7 +176,14 @@ Extra: $204.10/$200 (100%)
 Codex
 5-hour:  24%  (resets in 4h 12m)
 Weekly:  15%  (resets in 3d 11h 44m)
+───────────────
+GitHub Copilot
+Plan:    pro
+Premium: 50%  (150/300)
+Resets:  in 3d 12h
 ```
+
+OpenCode logs into Copilot via Device Flow OAuth (`opencode auth login github-copilot`), storing the `gho_*` token in `~/.local/share/opencode/auth.json`. ai-gauge picks it up automatically — no extra configuration needed when `tokenSource: opencode`.
 
 The current plan and token source are reflected as **checkmarks in the submenu** (macOS) and in the Linux tooltip footer.
 
@@ -251,7 +258,7 @@ ai-gauge-config set tokenSource opencode
 
 | Field | Values | Description |
 |-------|--------|-------------|
-| `tokenSource` | `claude-code` (default), `opencode`, `codex`, `claude-settings:<name>` | OAuth credential source |
+| `tokenSource` | `claude-code` (default), `opencode`, `codex`, `github`, `claude-settings:<name>` | OAuth credential source |
 | `plan` | `max`, `pro`, `team`, `enterprise`, `unknown` (Anthropic) <br> `plus`, `pro`, `business`, `enterprise`, `edu` (Codex) | Subscription plan (shown in tooltip) |
 | `displayMode` | `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset` | Display format for menubar/waybar |
 
@@ -262,6 +269,28 @@ ai-gauge-config set tokenSource opencode
 ai-gauge-config set plan max
 ai-gauge-config get
 ```
+
+## GitHub Copilot
+
+ai-gauge can monitor your Copilot monthly premium-request quota for Individual plans (Free, Pro, Pro+).
+
+```bash
+# Works with default gh storage (Keychain on macOS, Secret Service on Linux, or --insecure-storage plaintext)
+gh auth login
+ai-gauge-config set tokenSource github
+systemctl --user restart ai-gauge-server   # Linux
+# macOS: launchctl kickstart -k gui/$(id -u)/com.ai-gauge.server
+```
+
+ai-gauge calls `gh auth token --hostname github.com` at each poll, so any gh storage backend (Keychain on macOS, Secret Service on Linux, or `--insecure-storage` plaintext) works out of the box.
+
+**Headless / CI mode**: If `gh` binary is unavailable, copy a `gho_*` OAuth token (obtained via `gh auth token --hostname github.com` on a workstation) into `~/.config/ai-gauge/copilot-token` (single-line plain text file). The daemon falls back to this file when both Tier 1 (shell-out) and Tier 2 (hosts.yml plaintext) fail.
+
+> **Important — PAT compatibility**: Classic Personal Access Tokens (`ghp_*`) and fine-grained PATs (`github_pat_*`) **do not work** for Copilot quota monitoring — the `/copilot_internal/v2/token` endpoint requires the OAuth token (`gho_*`) issued by `gh auth login`. ai-gauge will reject any other token format with a clear error log.
+
+**Limitations**: v1 supports Individual plans only (Free/Pro/Pro+). Business/Enterprise quotas deferred to v1.1. GitHub Enterprise Server not supported. Multi-account gh CLI uses first `github.com:` block only.
+
+> Note: ai-gauge mirrors official VS Code Copilot extension headers to authenticate the internal API. If GitHub changes their internal API contract, ai-gauge may break temporarily — please file an issue.
 
 ## OpenAI Codex (ChatGPT subscription)
 
@@ -405,7 +434,8 @@ The button connects to `ai-gauge-server` via WebSocket and updates in real time.
 
 - **Claude Code / OpenCode (Anthropic OAuth)** → `https://api.anthropic.com/api/oauth/usage`
 - **OpenAI Codex** → `https://chatgpt.com/backend-api/wham/usage` (with JSONL fallback to `~/.codex/sessions/`)
-- **OpenCode dual mode** → both endpoints in parallel, broadcast carries a top-level `secondary` field for the second provider's data
+- **OpenCode tri-mode** → all available endpoints fetched in parallel; broadcast carries a top-level `secondary` field for Codex/OpenAI and a top-level `copilot` field for GitHub Copilot, when those OAuth blocks are present in the OpenCode auth file
+- **GitHub Copilot** → `https://api.github.com/copilot_internal/v2/token` (authenticated via `gh auth token` shell-out → fallback to `~/.config/gh/hosts.yml` → fallback to `~/.config/ai-gauge/copilot-token`)
 - **Custom `claude-settings:*` providers** → whatever `ANTHROPIC_BASE_URL` you configure (Z.ai, MiniMax, OpenRouter, Komilion, Packy)
 
 Results are broadcast to all connected WebSocket clients on `ws://localhost:19876`.
@@ -446,7 +476,7 @@ ai-gauge is early — first users still arriving. Feedback at any level helps:
 - **Questions, install issues, "how do I do X"** → [Discussions / Q&A](https://github.com/merely04/ai-gauge/discussions/categories/q-a)
 - **Feature ideas, brainstorming** → [Discussions / Ideas](https://github.com/merely04/ai-gauge/discussions/categories/ideas)
 - **Confirmed bugs with repro steps** → [Open an Issue](https://github.com/merely04/ai-gauge/issues/new?template=bug_report.yml)
-- **Request a new AI provider** (DeepSeek, Groq, Gemini, Copilot, etc.) → [Provider Request](https://github.com/merely04/ai-gauge/issues/new?template=provider_request.yml)
+- **Request a new AI provider** (DeepSeek, Groq, Gemini, Cursor, etc.) → [Provider Request](https://github.com/merely04/ai-gauge/issues/new?template=provider_request.yml)
 - **Show off your setup** → [Discussions / Show and tell](https://github.com/merely04/ai-gauge/discussions/categories/show-and-tell)
 
 Read the [welcome post](https://github.com/merely04/ai-gauge/discussions/3) for the full triage map.

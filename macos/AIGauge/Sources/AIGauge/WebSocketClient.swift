@@ -43,6 +43,20 @@ struct UsagePayload: Codable {
         let balance: Balance?
     }
 
+    struct CopilotData: Codable {
+        struct CopilotPremiumInteractions: Codable {
+            let utilization: Double?
+            let used: Int?
+            let limit: Int?
+            let resets_at: String?
+            let overage_count: Int?
+            let overage_permitted: Bool?
+        }
+
+        let plan: String?
+        let premium_interactions: CopilotPremiumInteractions?
+    }
+
     let five_hour: Window?
     let seven_day: Window?
     let seven_day_sonnet: Window?
@@ -50,7 +64,31 @@ struct UsagePayload: Codable {
     let extra_usage: ExtraUsage?
     let balance: Balance?
     let secondary: Secondary?
+    let copilot: CopilotData?
     let meta: Meta?
+
+    // Default-arg init so adding new optional top-level fields stays source-compatible.
+    init(
+        five_hour: Window? = nil,
+        seven_day: Window? = nil,
+        seven_day_sonnet: Window? = nil,
+        code_review: Window? = nil,
+        extra_usage: ExtraUsage? = nil,
+        balance: Balance? = nil,
+        secondary: Secondary? = nil,
+        copilot: CopilotData? = nil,
+        meta: Meta? = nil
+    ) {
+        self.five_hour = five_hour
+        self.seven_day = seven_day
+        self.seven_day_sonnet = seven_day_sonnet
+        self.code_review = code_review
+        self.extra_usage = extra_usage
+        self.balance = balance
+        self.secondary = secondary
+        self.copilot = copilot
+        self.meta = meta
+    }
 }
 
 struct NotifyPayload: Codable {

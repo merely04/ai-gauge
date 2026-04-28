@@ -7,6 +7,7 @@ import { createThresholdNotifier } from '../lib/threshold-notify.js';
 import { createUpdateLifecycle } from '../lib/update-lifecycle.js';
 import { atomicWriteJSON } from '../lib/atomic-write.js';
 import { readClaudeCodeCredentials, readOpenCodeCredentials, isTokenValid, CREDS_FILE, OPENCODE_AUTH_FILE_PRIMARY, OPENCODE_AUTH_FILE_MAC } from '../lib/credentials.js';
+import { readCopilotCredentials } from '../lib/credentials-copilot.js';
 import { readCodexCredentials } from '../lib/credentials-codex.js';
 import { discoverSettingsFiles, readSettingsFileForCreds } from '../lib/settings-discovery.js';
 import { logJson, sanitizeError } from '../lib/log-safe.js';
@@ -20,6 +21,7 @@ import '../lib/providers/minimax.js';
 import '../lib/providers/openrouter.js';
 import '../lib/providers/komilion.js';
 import '../lib/providers/packy.js';
+import '../lib/providers/copilot.js';
 import '../lib/providers/codex.js';
 import '../lib/providers/unknown.js';
 
@@ -73,6 +75,7 @@ async function readCredentials(config) {
         source: 'opencode',
         provider: 'anthropic',
         secondary: c.secondary ? c.secondary.provider : null,
+        copilotSecondary: c.copilotSecondary ? c.copilotSecondary.provider : null,
       });
       return { ...c, tokenSource: src, provider: 'anthropic', baseUrl: null };
     }
@@ -88,6 +91,23 @@ async function readCredentials(config) {
     }
     logJson(console.error, 'credentials_missing', { source: 'codex' });
     return null;
+  }
+
+  if (src === 'github') {
+    const c = await readCopilotCredentials();
+    if (!c) {
+      logJson(console.error, 'credentials_missing', { source: 'github', reason: 'no-gh-cli-no-pat' });
+      return null;
+    }
+    logJson(console.error, 'credentials_loaded', { source: 'github', provider: 'copilot', credSource: c.source });
+    return {
+      token: c.token,
+      expiresAt: null,
+      subscriptionType: 'unknown',
+      tokenSource: src,
+      baseUrl: null,
+      provider: 'copilot',
+    };
   }
 
   if (src.startsWith('claude-settings:')) {
@@ -129,7 +149,7 @@ async function detectClaudeVersion() {
 
 async function writeUsageAtomic(data) {
   await atomicWriteJSON(`${STATE_DIR}/usage.json`, data, {
-    validate: (parsed) => !!(parsed?.five_hour || parsed?.balance),
+    validate: (parsed) => !!(parsed?.five_hour || parsed?.balance || parsed?.copilot),
   });
   await Bun.write(`${STATE_DIR}/last_fetch`, String(Math.floor(Date.now() / 1000)));
 }
@@ -156,6 +176,23 @@ const thresholdNotifier = createThresholdNotifier({
   systemNotify,
   formatDuration,
   formatDaysRemaining,
+});
+
+const copilotThresholdNotifier = createThresholdNotifier({
+  broadcast,
+  systemNotify,
+  formatDuration,
+  formatDaysRemaining,
+  extractor: (d) => {
+    const pi = d?.copilot?.premium_interactions;
+    if (!pi) return null;
+    return {
+      utilization: pi.utilization,
+      resets_at: pi.resets_at,
+      daysResetAt: pi.resets_at,
+    };
+  },
+  messagePrefix: 'Copilot premium',
 });
 
 const updateLifecycle = createUpdateLifecycle({
@@ -260,7 +297,7 @@ async function fetchUsage(creds, config, { generation, signal, _retriedAfterAuth
     if (parsed.error) {
       const status = parsed.error.status;
       const isAuthError = status === 401 || status === 403;
-      if (isAuthError && !_retriedAfterAuth && providerName === 'anthropic' && creds.tokenSource && !creds.baseUrl) {
+      if (isAuthError && !_retriedAfterAuth && adapter.supportsTokenRetry && creds.tokenSource && !creds.baseUrl) {
         const fresh = await rereadCredentials(effectiveConfig);
         if (fresh?.token && fresh.token !== creds.token) {
           logJson(console.warn, 'token_rotation_retry', { provider: providerName, status });
@@ -279,12 +316,16 @@ async function fetchUsage(creds, config, { generation, signal, _retriedAfterAuth
 
     if (generation != null && generation !== fetchGeneration) return false;
 
-    const secondary = creds.secondary ? await fetchSecondary(creds.secondary, signal) : null;
+    const [secondary, copilotSecondary] = await Promise.all([
+      creds.secondary ? fetchSecondary(creds.secondary, signal) : null,
+      creds.copilotSecondary ? fetchCopilotSecondary(creds.copilotSecondary, signal) : null,
+    ]);
     if (generation != null && generation !== fetchGeneration) return false;
 
     cachedData = {
       ...(parsed.rateLimits ?? {}),
       balance: parsed.balance ?? null,
+      copilot: parsed.copilot ?? copilotSecondary ?? null,
       secondary,
       meta: buildMeta(effectiveConfig, {
         subscriptionType: creds.subscriptionType,
@@ -304,21 +345,9 @@ async function fetchUsage(creds, config, { generation, signal, _retriedAfterAuth
   }
 }
 
-async function fetchSecondary(secondaryCreds, signal) {
-  if (!secondaryCreds?.token || !secondaryCreds?.account_id) return null;
-  if (secondaryCreds.expiresAt !== null && !isTokenValid(secondaryCreds.expiresAt)) {
-    logJson(console.error, 'secondary_token_expired', { provider: secondaryCreds.provider });
-    return null;
-  }
-
-  const adapter = getProvider(secondaryCreds.provider ?? 'codex');
-  if (adapter.kind === 'stub') return null;
-
+async function fetchAdapterParallel({ adapter, buildArgs, signal, logPrefix, providerName }) {
   try {
-    const req = adapter.buildRequest(
-      { token: secondaryCreds.token, account_id: secondaryCreds.account_id, claudeVersion },
-      { baseUrl: null }
-    );
+    const req = adapter.buildRequest(...buildArgs);
     const timeoutSignal = AbortSignal.timeout(10_000);
     const fetchSignal = signal && typeof AbortSignal.any === 'function'
       ? AbortSignal.any([signal, timeoutSignal])
@@ -338,23 +367,66 @@ async function fetchSecondary(secondaryCreds, signal) {
 
     const parsed = adapter.parseResponse(json, res.status);
     if (parsed.error) {
-      logJson(console.warn, 'secondary_provider_error', {
-        provider: secondaryCreds.provider,
+      logJson(console.warn, `${logPrefix}_provider_error`, {
+        provider: providerName,
         ...sanitizeError(new Error(parsed.error.reason ?? 'unknown')),
       });
       return null;
     }
 
-    return {
-      provider: secondaryCreds.provider,
-      ...(parsed.rateLimits ?? {}),
-      balance: parsed.balance ?? null,
-    };
+    return parsed;
   } catch (err) {
     if (signal?.aborted) return null;
-    logJson(console.warn, 'secondary_fetch_error', { provider: secondaryCreds.provider, ...sanitizeError(err) });
+    logJson(console.warn, `${logPrefix}_fetch_error`, { provider: providerName, ...sanitizeError(err) });
     return null;
   }
+}
+
+async function fetchSecondary(secondaryCreds, signal) {
+  if (!secondaryCreds?.token || !secondaryCreds?.account_id) return null;
+  if (secondaryCreds.expiresAt !== null && !isTokenValid(secondaryCreds.expiresAt)) {
+    logJson(console.error, 'secondary_token_expired', { provider: secondaryCreds.provider });
+    return null;
+  }
+
+  const adapter = getProvider(secondaryCreds.provider ?? 'codex');
+  if (adapter.kind === 'stub') return null;
+
+  const parsed = await fetchAdapterParallel({
+    adapter,
+    buildArgs: [
+      { token: secondaryCreds.token, account_id: secondaryCreds.account_id, claudeVersion },
+      { baseUrl: null },
+    ],
+    signal,
+    logPrefix: 'secondary',
+    providerName: secondaryCreds.provider,
+  });
+  if (!parsed) return null;
+
+  return {
+    provider: secondaryCreds.provider,
+    ...(parsed.rateLimits ?? {}),
+    balance: parsed.balance ?? null,
+  };
+}
+
+async function fetchCopilotSecondary(copilotCreds, signal) {
+  if (!copilotCreds?.token) return null;
+  if (copilotCreds.expiresAt !== null && !isTokenValid(copilotCreds.expiresAt)) {
+    logJson(console.error, 'copilot_secondary_token_expired', { provider: 'copilot' });
+    return null;
+  }
+
+  const parsed = await fetchAdapterParallel({
+    adapter: getProvider('copilot'),
+    buildArgs: [{ token: copilotCreds.token }],
+    signal,
+    logPrefix: 'copilot_secondary',
+    providerName: 'copilot',
+  });
+
+  return parsed?.copilot ?? null;
 }
 
 async function tryCodexJsonlFallback(creds, config, { generation } = {}) {
@@ -389,6 +461,7 @@ function buildEmptyBroadcast(config, provider) {
     seven_day_cowork: null,
     seven_day_omelette: null,
     balance: null,
+    copilot: null,
     secondary: null,
     meta: buildMeta(config, { provider: provider ?? 'unknown' }),
   };
@@ -416,6 +489,7 @@ async function fetchAndHandleBroadcast({ force = false } = {}) {
       currentInterval = POLL_INTERVAL;
       broadcast(cachedData);
       await thresholdNotifier.check(cachedData);
+      await copilotThresholdNotifier.check(cachedData);
     } else {
       currentInterval = BACKOFF_INTERVAL;
       if (cachedData) {
@@ -447,6 +521,7 @@ async function refreshNow() {
     await writeUsageAtomic(cachedData);
     broadcast(cachedData);
     await thresholdNotifier.check(cachedData);
+    await copilotThresholdNotifier.check(cachedData);
   }
 }
 

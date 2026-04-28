@@ -5,6 +5,7 @@ enum Urgency {
     case ok
     case warning
     case critical
+    case waiting
 
     static func from(percentage: Int) -> Urgency {
         if percentage >= 80 { return .critical }
@@ -18,7 +19,7 @@ final class UsageModel: ObservableObject {
     static let SUPPORTED_PROTOCOL_VERSION = 4
 
     /// Keep in sync with `lib/config.js:TOKEN_SOURCE_PATTERN`.
-    nonisolated static let TOKEN_SOURCE_PATTERN = #"^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$"#
+    nonisolated static let TOKEN_SOURCE_PATTERN = #"^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$"#
 
     nonisolated static func isValidTokenSource(_ value: String) -> Bool {
         guard let regex = try? NSRegularExpression(pattern: TOKEN_SOURCE_PATTERN) else { return false }
@@ -48,6 +49,9 @@ final class UsageModel: ObservableObject {
 
     @Published var availableSources: [DiscoveredSource] = []
     @Published var daemonReachable: Bool = true
+
+    @Published var copilotPlan: String? = nil
+    @Published var copilotPremium: UsagePayload.CopilotData.CopilotPremiumInteractions? = nil
 
     var _previousDaemonVersion: String? = nil
 
@@ -79,6 +83,14 @@ final class UsageModel: ObservableObject {
         }
 
         self.provider = payload.meta?.provider ?? ""
+        self.copilotPlan = payload.copilot?.plan
+        self.copilotPremium = payload.copilot?.premium_interactions
+
+        if payload.five_hour == nil, let pi = payload.copilot?.premium_interactions {
+            renderCopilotFallback(payload: payload, pi: pi, now: now)
+            return
+        }
+
         let indicator = Self.providerIndicator(provider)
         let isBalanceOnly = payload.five_hour?.utilization == nil
         let isWaiting = payload.five_hour == nil && payload.balance == nil
@@ -89,7 +101,7 @@ final class UsageModel: ObservableObject {
         let sevenInt = Int(sevenPct.rounded())
 
         self.percentage = fiveInt
-        self.urgency = Urgency.from(percentage: fiveInt)
+        self.urgency = isWaiting ? .waiting : Urgency.from(percentage: fiveInt)
 
         if isWaiting {
             self.text = "\(Self.spark) --\(indicator)"
@@ -249,12 +261,7 @@ final class UsageModel: ObservableObject {
             let fmt = ISO8601DateFormatter()
             fmt.formatOptions = [.withInternetDateTime]
             let tsStr = fmt.string(from: Date())
-            let urgStr: String
-            switch self.urgency {
-            case .ok: urgStr = "ok"
-            case .warning: urgStr = "warning"
-            case .critical: urgStr = "critical"
-            }
+            let urgStr = urgencyString
             let line = "{\"ts\":\"\(tsStr)\",\"text\":\(self.text.debugDescription),\"displayMode\":\"\(self.displayMode)\",\"urgency\":\"\(urgStr)\"}\n"
             if let handle = FileHandle(forWritingAtPath: logPath) {
                 handle.seekToEndOfFile()
@@ -266,6 +273,103 @@ final class UsageModel: ObservableObject {
         }
 
         writeMenuStateSnapshot()
+    }
+
+    private func renderCopilotFallback(
+        payload: UsagePayload,
+        pi: UsagePayload.CopilotData.CopilotPremiumInteractions,
+        now: Date
+    ) {
+        let displayMode = payload.meta?.displayMode ?? "full"
+        let utilRaw = pi.utilization ?? 0
+        let util = Int(utilRaw.rounded())
+        let used = pi.used ?? 0
+        let limit = pi.limit ?? 0
+        let plan = payload.copilot?.plan ?? "unknown"
+        let countdownShort = Self.formatDuration(pi.resets_at, now: now) ?? ""
+        let countdownLong = Self.formatDurationLong(pi.resets_at, now: now) ?? ""
+
+        self.percentage = util
+        if util >= 80 {
+            self.urgency = .critical
+        } else if util >= 50 {
+            self.urgency = .warning
+        } else {
+            self.urgency = .ok
+        }
+
+        switch displayMode {
+        case "percent-only":
+            self.text = "\(Self.spark) \(util)%"
+        case "bar-dots":
+            let n = Self.barCells(utilRaw)
+            self.text = "\(Self.spark) \(String(repeating: Self.dotFilled, count: n))\(String(repeating: Self.dotEmpty, count: 10 - n))"
+        case "number-bar":
+            let n = Self.barCells(utilRaw)
+            self.text = "\(util)% \(String(repeating: Self.barFilled, count: n))\(String(repeating: Self.barEmpty, count: 10 - n))"
+        case "time-to-reset":
+            self.text = countdownShort.isEmpty ? "\(Self.timer) --" : "\(Self.timer) \(countdownShort)"
+        default:
+            var t = "\(Self.spark) \(util)%"
+            if !countdownShort.isEmpty { t += " \(countdownShort)" }
+            self.text = t
+        }
+
+        var lines = [
+            "GitHub Copilot Usage",
+            "───────────────",
+            "Plan:    \(plan)",
+            "Premium: \(util)% (\(used)/\(limit))",
+            "Resets:  \(countdownLong.isEmpty ? "unknown" : countdownLong)",
+        ]
+        if let oc = pi.overage_count, oc > 0 {
+            lines.append("Overage: \(oc) requests")
+        }
+        self.tooltip = lines.joined(separator: "\n")
+
+        self.plan = payload.meta?.plan ?? ""
+        self.tokenSource = payload.meta?.tokenSource ?? ""
+        self.displayMode = displayMode
+
+        if let newVersion = payload.meta?.version {
+            daemonVersion = newVersion
+            protocolVersion = payload.meta?.protocolVersion
+            autoCheckUpdatesEnabled = payload.meta?.autoCheckUpdates ?? true
+
+            if let prev = _previousDaemonVersion, compareVersions(newVersion, prev) > 0 {
+                updateSuccess = "Updated to v\(newVersion)"
+                updateAvailable = false
+                latestVersion = nil
+                updateInProgress = false
+                scheduleUpdateSuccessClear()
+            }
+            _previousDaemonVersion = newVersion
+        }
+
+        if let logPath = ProcessInfo.processInfo.environment["AIGAUGE_TEXT_LOG_PATH"], !logPath.isEmpty {
+            let fmt = ISO8601DateFormatter()
+            fmt.formatOptions = [.withInternetDateTime]
+            let tsStr = fmt.string(from: Date())
+            let line = "{\"ts\":\"\(tsStr)\",\"text\":\(self.text.debugDescription),\"displayMode\":\"\(self.displayMode)\",\"urgency\":\"\(urgencyString)\"}\n"
+            if let handle = FileHandle(forWritingAtPath: logPath) {
+                handle.seekToEndOfFile()
+                handle.write(line.data(using: .utf8) ?? Data())
+                handle.closeFile()
+            } else {
+                try? line.data(using: .utf8)?.write(to: URL(fileURLWithPath: logPath))
+            }
+        }
+
+        writeMenuStateSnapshot()
+    }
+
+    var urgencyString: String {
+        switch urgency {
+        case .ok: return "ok"
+        case .warning: return "warning"
+        case .critical: return "critical"
+        case .waiting: return "waiting"
+        }
     }
 
     func updateSources(_ sources: [DiscoveredSource]) {
@@ -283,7 +387,11 @@ final class UsageModel: ObservableObject {
         fiveHour: Int? = nil,
         sevenDay: Int? = nil,
         balanceTotalCents: Int? = nil,
-        balanceUsedCents: Int? = nil
+        balanceUsedCents: Int? = nil,
+        copilotUtilization: Int? = nil,
+        copilotPlan: String? = nil,
+        copilotUsed: Int? = nil,
+        copilotLimit: Int? = nil
     ) {
         let fiveWindow = fiveHour.map { UsagePayload.Window(utilization: Double($0), resets_at: nil) }
         let sevenWindow = sevenDay.map { UsagePayload.Window(utilization: Double($0), resets_at: nil) }
@@ -298,6 +406,20 @@ final class UsageModel: ObservableObject {
             )
         } else {
             balance = nil
+        }
+        let copilot: UsagePayload.CopilotData?
+        if let util = copilotUtilization {
+            let pi = UsagePayload.CopilotData.CopilotPremiumInteractions(
+                utilization: Double(util),
+                used: copilotUsed,
+                limit: copilotLimit,
+                resets_at: nil,
+                overage_count: nil,
+                overage_permitted: nil
+            )
+            copilot = UsagePayload.CopilotData(plan: copilotPlan, premium_interactions: pi)
+        } else {
+            copilot = nil
         }
         let meta = UsagePayload.Meta(
             plan: nil,
@@ -317,6 +439,7 @@ final class UsageModel: ObservableObject {
             extra_usage: nil,
             balance: balance,
             secondary: nil,
+            copilot: copilot,
             meta: meta
         )
         update(from: synth)
@@ -337,6 +460,20 @@ final class UsageModel: ObservableObject {
             return d
         }
 
+        let copilotPremiumJson: Any
+        if let pi = copilotPremium {
+            var d: [String: Any] = [:]
+            d["utilization"] = pi.utilization ?? NSNull()
+            d["used"] = pi.used ?? NSNull()
+            d["limit"] = pi.limit ?? NSNull()
+            d["resets_at"] = pi.resets_at ?? NSNull()
+            d["overage_count"] = pi.overage_count ?? NSNull()
+            d["overage_permitted"] = pi.overage_permitted ?? NSNull()
+            copilotPremiumJson = d
+        } else {
+            copilotPremiumJson = NSNull()
+        }
+
         let state: [String: Any] = [
             "menubarText": text,
             "tooltip": tooltip,
@@ -344,6 +481,9 @@ final class UsageModel: ObservableObject {
             "provider": provider,
             "availableSources": sourcesJson,
             "currentTokenSource": tokenSource,
+            "copilotPlan": copilotPlan ?? NSNull(),
+            "copilotPremium": copilotPremiumJson,
+            "urgency": urgencyString,
         ]
 
         guard let data = try? JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted]) else { return }

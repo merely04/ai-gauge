@@ -48,12 +48,35 @@ describe('loadCachedUsage', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null when neither five_hour nor balance present', async () => {
+  it('returns null when neither five_hour nor balance nor copilot present', async () => {
     tempDir = createTempDir();
     const path = writeCache(tempDir, { meta: { tokenSource: 'claude-code', provider: 'anthropic' } });
 
     const result = await loadCachedUsage(path, baseOpts);
     expect(result).toBeNull();
+  });
+
+  it('loads cache when only copilot field is present', async () => {
+    tempDir = createTempDir();
+    const path = writeCache(tempDir, {
+      copilot: {
+        plan: 'pro',
+        premium_interactions: { utilization: 50, used: 150, limit: 300, resets_at: '2099-05-01T00:00:00Z' },
+      },
+      meta: { tokenSource: 'github', provider: 'copilot' },
+    });
+
+    const result = await loadCachedUsage(path, {
+      expectedTokenSource: 'github',
+      expectedProvider: 'copilot',
+      config: { ...baseConfig, tokenSource: 'github' },
+      fallbackPlan: 'unknown',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.copilot.plan).toBe('pro');
+    expect(result.meta.provider).toBe('copilot');
+    expect(result.meta.tokenSource).toBe('github');
   });
 
   it('returns null and logs when tokenSource mismatches', async () => {

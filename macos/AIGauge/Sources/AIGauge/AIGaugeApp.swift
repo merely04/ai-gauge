@@ -128,7 +128,11 @@ struct AIGaugeApp: App {
                     fiveHour: env["AIGAUGE_TEST_FIVE_HOUR"].flatMap(Int.init),
                     sevenDay: env["AIGAUGE_TEST_SEVEN_DAY"].flatMap(Int.init),
                     balanceTotalCents: env["AIGAUGE_TEST_BALANCE_TOTAL_CENTS"].flatMap(Int.init),
-                    balanceUsedCents: env["AIGAUGE_TEST_BALANCE_USED_CENTS"].flatMap(Int.init)
+                    balanceUsedCents: env["AIGAUGE_TEST_BALANCE_USED_CENTS"].flatMap(Int.init),
+                    copilotUtilization: env["AIGAUGE_TEST_COPILOT_UTIL"].flatMap(Int.init),
+                    copilotPlan: env["AIGAUGE_TEST_COPILOT_PLAN"],
+                    copilotUsed: env["AIGAUGE_TEST_COPILOT_USED"].flatMap(Int.init),
+                    copilotLimit: env["AIGAUGE_TEST_COPILOT_LIMIT"].flatMap(Int.init)
                 )
             }
         }
@@ -159,6 +163,7 @@ struct AIGaugeApp: App {
         case .ok: return .primary
         case .warning: return .orange
         case .critical: return .red
+        case .waiting: return .secondary
         }
     }
 }

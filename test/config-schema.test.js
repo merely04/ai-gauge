@@ -87,6 +87,19 @@ describe("config schema: tokenSource pattern validation", () => {
   test("accepts codex as tokenSource", () => {
     expect(validateConfigChange('tokenSource', 'codex').valid).toBe(true);
   });
+
+  test("accepts github tokenSource", () => {
+    expect(validateConfigChange('tokenSource', 'github').valid).toBe(true);
+  });
+
+  test("accepts claude-settings:github as tokenSource", () => {
+    expect(validateConfigChange('tokenSource', 'claude-settings:github').valid).toBe(true);
+  });
+
+  test("rejects invalid github tokenSource variant", () => {
+    expect(validateConfigChange('tokenSource', 'githubXX').valid).toBe(false);
+    expect(validateConfigChange('tokenSource', 'github with space').valid).toBe(false);
+  });
 });
 
 describe("config schema: codex plan values", () => {
