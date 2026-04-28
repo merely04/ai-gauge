@@ -296,10 +296,9 @@ describe('Credential Reading', () => {
     expect(result.copilotSecondary.provider).toBe('copilot');
     expect(result.copilotSecondary.token).toBe('gho_realtoken123');
     expect(result.copilotSecondary.expiresAt).toBeNull();
-    expect(result.copilotSecondary.enterpriseUrl).toBeNull();
   });
 
-  it('extracts copilotSecondary with enterpriseUrl when present', async () => {
+  it('extracts copilotSecondary with non-zero expires timestamp preserved', async () => {
     tempDir = createTempDir();
     const primaryPath = join(tempDir, '.local', 'share', 'opencode', 'auth.json');
     const macPath = join(tempDir, 'Library', 'Application Support', 'opencode', 'auth.json');
@@ -309,19 +308,17 @@ describe('Credential Reading', () => {
       anthropic: { type: 'oauth', access: 'ant-token', expires: Date.now() + 3600000 },
       'github-copilot': {
         type: 'oauth',
-        refresh: 'gho_enterprise_token',
-        access: 'gho_enterprise_token',
+        refresh: 'gho_explicit_expiry',
+        access: 'gho_explicit_expiry',
         expires: 1735689600,
-        enterpriseUrl: 'company.ghe.com',
       },
     }));
 
     const result = await readOpenCodeCredentials(primaryPath, macPath);
 
     expect(result.copilotSecondary).not.toBeNull();
-    expect(result.copilotSecondary.token).toBe('gho_enterprise_token');
+    expect(result.copilotSecondary.token).toBe('gho_explicit_expiry');
     expect(result.copilotSecondary.expiresAt).toBe(1735689600);
-    expect(result.copilotSecondary.enterpriseUrl).toBe('company.ghe.com');
   });
 
   it('returns copilotSecondary=null when github-copilot block is api-key (not oauth)', async () => {

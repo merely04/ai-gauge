@@ -215,7 +215,7 @@ describe("render-waybar: copilot fallback", () => {
     expect(out.tooltip).not.toContain("Overage:");
   });
 
-  test("five_hour wins when both five_hour and copilot present", () => {
+  test("five_hour drives menubar text but copilot section appears in tri-mode tooltip", () => {
     const data = {
       five_hour: { utilization: 44, resets_at: "2026-04-30T23:00:00.000Z" },
       seven_day: { utilization: 15, resets_at: "2026-05-07T00:00:00.000Z" },
@@ -233,8 +233,21 @@ describe("render-waybar: copilot fallback", () => {
       meta: { displayMode: "full" },
     };
     const out = render(data, {}, fixedNow);
-    expect(out.tooltip).not.toContain("GitHub Copilot");
     expect(out.text).toContain("44%");
+    expect(out.tooltip).toContain("GitHub Copilot");
+    expect(out.tooltip).toContain("Premium: 50%");
+    expect(out.tooltip).toContain("Plan:    pro");
+  });
+
+  test("main render path omits copilot section when copilot is null", () => {
+    const data = {
+      five_hour: { utilization: 44, resets_at: "2026-04-30T23:00:00.000Z" },
+      seven_day: { utilization: 15, resets_at: "2026-05-07T00:00:00.000Z" },
+      copilot: null,
+      meta: { displayMode: "full" },
+    };
+    const out = render(data, {}, fixedNow);
+    expect(out.tooltip).not.toContain("GitHub Copilot");
   });
 
   test("waiting state when both five_hour and copilot null", () => {

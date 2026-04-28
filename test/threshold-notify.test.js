@@ -31,7 +31,7 @@ describe('createThresholdNotifier', () => {
       type: 'notify',
       threshold: 80,
       percentage: 82,
-      message: 'Usage at 80%, ~3 days remaining',
+      message: '5-hour limit at 80%, ~3 days remaining',
     });
   });
 
@@ -61,6 +61,7 @@ describe('createThresholdNotifier', () => {
     expect(deps.systemNotify.mock.calls[0][0].message).toBe('Copilot premium at 80%\nResets in 2h00m');
     expect(deps.broadcast).toHaveBeenCalledTimes(1);
     expect(deps.broadcast.mock.calls[0][0].threshold).toBe(80);
+    expect(deps.broadcast.mock.calls[0][0].message).toContain('Copilot premium');
   });
 
   it('reset below 50 clears triggered state', async () => {

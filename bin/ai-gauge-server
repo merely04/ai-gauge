@@ -297,7 +297,7 @@ async function fetchUsage(creds, config, { generation, signal, _retriedAfterAuth
     if (parsed.error) {
       const status = parsed.error.status;
       const isAuthError = status === 401 || status === 403;
-      if (isAuthError && !_retriedAfterAuth && (providerName === 'anthropic' || providerName === 'copilot') && creds.tokenSource && !creds.baseUrl) {
+      if (isAuthError && !_retriedAfterAuth && adapter.supportsTokenRetry && creds.tokenSource && !creds.baseUrl) {
         const fresh = await rereadCredentials(effectiveConfig);
         if (fresh?.token && fresh.token !== creds.token) {
           logJson(console.warn, 'token_rotation_retry', { provider: providerName, status });
@@ -345,6 +345,43 @@ async function fetchUsage(creds, config, { generation, signal, _retriedAfterAuth
   }
 }
 
+async function fetchAdapterParallel({ adapter, buildArgs, signal, logPrefix, providerName }) {
+  try {
+    const req = adapter.buildRequest(...buildArgs);
+    const timeoutSignal = AbortSignal.timeout(10_000);
+    const fetchSignal = signal && typeof AbortSignal.any === 'function'
+      ? AbortSignal.any([signal, timeoutSignal])
+      : timeoutSignal;
+
+    const res = await doFetch(req.url, {
+      method: req.method ?? 'GET',
+      headers: req.headers,
+      redirect: 'manual',
+      signal: fetchSignal,
+    });
+
+    if (res.status >= 300 && res.status < 400) return null;
+
+    let json = null;
+    try { json = await res.json(); } catch {}
+
+    const parsed = adapter.parseResponse(json, res.status);
+    if (parsed.error) {
+      logJson(console.warn, `${logPrefix}_provider_error`, {
+        provider: providerName,
+        ...sanitizeError(new Error(parsed.error.reason ?? 'unknown')),
+      });
+      return null;
+    }
+
+    return parsed;
+  } catch (err) {
+    if (signal?.aborted) return null;
+    logJson(console.warn, `${logPrefix}_fetch_error`, { provider: providerName, ...sanitizeError(err) });
+    return null;
+  }
+}
+
 async function fetchSecondary(secondaryCreds, signal) {
   if (!secondaryCreds?.token || !secondaryCreds?.account_id) return null;
   if (secondaryCreds.expiresAt !== null && !isTokenValid(secondaryCreds.expiresAt)) {
@@ -355,47 +392,23 @@ async function fetchSecondary(secondaryCreds, signal) {
   const adapter = getProvider(secondaryCreds.provider ?? 'codex');
   if (adapter.kind === 'stub') return null;
 
-  try {
-    const req = adapter.buildRequest(
+  const parsed = await fetchAdapterParallel({
+    adapter,
+    buildArgs: [
       { token: secondaryCreds.token, account_id: secondaryCreds.account_id, claudeVersion },
-      { baseUrl: null }
-    );
-    const timeoutSignal = AbortSignal.timeout(10_000);
-    const fetchSignal = signal && typeof AbortSignal.any === 'function'
-      ? AbortSignal.any([signal, timeoutSignal])
-      : timeoutSignal;
+      { baseUrl: null },
+    ],
+    signal,
+    logPrefix: 'secondary',
+    providerName: secondaryCreds.provider,
+  });
+  if (!parsed) return null;
 
-    const res = await doFetch(req.url, {
-      method: req.method ?? 'GET',
-      headers: req.headers,
-      redirect: 'manual',
-      signal: fetchSignal,
-    });
-
-    if (res.status >= 300 && res.status < 400) return null;
-
-    let json = null;
-    try { json = await res.json(); } catch {}
-
-    const parsed = adapter.parseResponse(json, res.status);
-    if (parsed.error) {
-      logJson(console.warn, 'secondary_provider_error', {
-        provider: secondaryCreds.provider,
-        ...sanitizeError(new Error(parsed.error.reason ?? 'unknown')),
-      });
-      return null;
-    }
-
-    return {
-      provider: secondaryCreds.provider,
-      ...(parsed.rateLimits ?? {}),
-      balance: parsed.balance ?? null,
-    };
-  } catch (err) {
-    if (signal?.aborted) return null;
-    logJson(console.warn, 'secondary_fetch_error', { provider: secondaryCreds.provider, ...sanitizeError(err) });
-    return null;
-  }
+  return {
+    provider: secondaryCreds.provider,
+    ...(parsed.rateLimits ?? {}),
+    balance: parsed.balance ?? null,
+  };
 }
 
 async function fetchCopilotSecondary(copilotCreds, signal) {
@@ -405,42 +418,15 @@ async function fetchCopilotSecondary(copilotCreds, signal) {
     return null;
   }
 
-  const adapter = getProvider('copilot');
+  const parsed = await fetchAdapterParallel({
+    adapter: getProvider('copilot'),
+    buildArgs: [{ token: copilotCreds.token }],
+    signal,
+    logPrefix: 'copilot_secondary',
+    providerName: 'copilot',
+  });
 
-  try {
-    const req = adapter.buildRequest({ token: copilotCreds.token });
-    const timeoutSignal = AbortSignal.timeout(10_000);
-    const fetchSignal = signal && typeof AbortSignal.any === 'function'
-      ? AbortSignal.any([signal, timeoutSignal])
-      : timeoutSignal;
-
-    const res = await doFetch(req.url, {
-      method: req.method ?? 'GET',
-      headers: req.headers,
-      redirect: 'manual',
-      signal: fetchSignal,
-    });
-
-    if (res.status >= 300 && res.status < 400) return null;
-
-    let json = null;
-    try { json = await res.json(); } catch {}
-
-    const parsed = adapter.parseResponse(json, res.status);
-    if (parsed.error) {
-      logJson(console.warn, 'copilot_secondary_provider_error', {
-        provider: 'copilot',
-        ...sanitizeError(new Error(parsed.error.reason ?? 'unknown')),
-      });
-      return null;
-    }
-
-    return parsed.copilot ?? null;
-  } catch (err) {
-    if (signal?.aborted) return null;
-    logJson(console.warn, 'copilot_secondary_fetch_error', { provider: 'copilot', ...sanitizeError(err) });
-    return null;
-  }
+  return parsed?.copilot ?? null;
 }
 
 async function tryCodexJsonlFallback(creds, config, { generation } = {}) {
