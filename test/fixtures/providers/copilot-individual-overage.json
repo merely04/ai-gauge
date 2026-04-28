@@ -1,0 +1,21 @@
+{
+  "token": "v1:ghu_proplus789",
+  "expires_at": "2026-04-28T05:46:19Z",
+  "refresh_in": 1500,
+  "tracking_id": "track-overage-789",
+  "sku": "copilot_for_individuals_plus",
+  "chat_enabled": true,
+  "copilot_ide_agent_chat_gpt4_small_prompt": true,
+  "code_quote_enabled": true,
+  "overage_count": 20,
+  "overage_permitted": true,
+  "limited_user_quotas": {
+    "copilot_premium_interaction": {
+      "storage": 1520,
+      "limit": 1500,
+      "reset_date": "2026-05-01T00:00:00Z",
+      "overage_count": 20,
+      "overage_permitted": true
+    }
+  }
+}

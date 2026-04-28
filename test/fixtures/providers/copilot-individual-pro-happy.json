@@ -1,0 +1,17 @@
+{
+  "token": "v1:ghu_protoken123",
+  "expires_at": "2026-04-28T05:46:19Z",
+  "refresh_in": 1500,
+  "tracking_id": "track-pro-123",
+  "sku": "copilot_for_individuals",
+  "chat_enabled": true,
+  "copilot_ide_agent_chat_gpt4_small_prompt": true,
+  "code_quote_enabled": true,
+  "limited_user_quotas": {
+    "copilot_premium_interaction": {
+      "storage": 150,
+      "limit": 300,
+      "reset_date": "2026-05-01T00:00:00Z"
+    }
+  }
+}
