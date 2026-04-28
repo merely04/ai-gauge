@@ -41,8 +41,10 @@ function emptyUpdateState() {
 }
 
 function helperCommand() {
-  if (HELPER_CMD_OVERRIDE) return HELPER_CMD_OVERRIDE.trim().split(/\s+/);
-  return [HELPER_PATH];
+if (HELPER_CMD_OVERRIDE) return HELPER_CMD_OVERRIDE.trim().split(/\s+/);
+// Spawn via python3 explicitly. The helper file ships as a regular .py
+// (no executable bit) — direct spawn would raise EACCES on POSIX.
+return ['python3', HELPER_PATH];
 }
 
 function sendWs(payload) {

@@ -350,3 +350,57 @@ describe('ai-gauge-tray', () => {
     expect(menu.items.some((item) => item.id === 'info:copilot')).toBe(true);
   });
 });
+
+describe('ai-gauge-tray regression — spawns real Python helper without override', () => {
+  afterEach(async () => {
+    while (children.length) {
+      const child = children.pop();
+      try { child.kill(); } catch { /* swallow */ }
+    }
+    while (servers.length) {
+      const server = servers.pop();
+      try { server.stop(true); } catch { /* swallow */ }
+    }
+    while (tempDirs.length) {
+      const dir = tempDirs.pop();
+      try { await rm(dir, { recursive: true, force: true }); } catch { /* swallow */ }
+    }
+  });
+
+  it('spawns python3 sni-helper.py (not direct .py — would EACCES on POSIX)', async () => {
+    const proc = Bun.spawn(['bun', TRAY_BIN], {
+      env: {
+        ...process.env,
+        AIGAUGE_WS_URL: 'ws://127.0.0.1:1',
+        AIGAUGE_TRAY_HELPER_RESTART_INITIAL_DELAY_MS: '50',
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    children.push(proc);
+
+    const stderrReader = proc.stderr.getReader();
+    const decoder = new TextDecoder();
+    let stderrBuf = '';
+    const readPromise = (async () => {
+      while (true) {
+        const { done, value } = await stderrReader.read();
+        if (done) break;
+        stderrBuf += decoder.decode(value, { stream: true });
+        if (stderrBuf.includes('EACCES')) return 'eacces';
+        if (stderrBuf.includes('tray-helper-fatal') || stderrBuf.includes('tray-helper-error') || stderrBuf.includes('tray-helper-exited')) return 'ok';
+      }
+      return 'eof';
+    })();
+
+    const result = await Promise.race([
+      readPromise,
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 8000)),
+    ]);
+
+    if (result === 'eacces') {
+      throw new Error('REGRESSION: tray spawned .py directly without python3 prefix (EACCES)');
+    }
+    expect(result).toBe('ok');
+  });
+});
