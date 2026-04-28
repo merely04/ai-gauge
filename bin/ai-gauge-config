@@ -123,10 +123,10 @@ if [[ "${1:-}" == "set" ]]; then
             esac
             ;;
         tokenSource)
-            if [[ "$value" =~ ^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$ ]]; then
+            if [[ "$value" =~ ^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$ ]]; then
                 :
             else
-                echo "Error: tokenSource must match pattern ^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$" >&2
+                echo "Error: tokenSource must match pattern ^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$" >&2
                 exit 1
             fi
             ;;
@@ -155,7 +155,7 @@ fi
 if is_macos && [[ "${DRY_RUN:-0}" != "1" && -z "${SELECTED_ITEM:-}" ]]; then
     echo "Config UI available via menubar right-click submenu."
     echo "For CLI use: ai-gauge-config set <key> <value>"
-    echo "  Keys: plan (max|pro|team|enterprise|unknown|plus|business|edu), tokenSource (claude-code|opencode|codex|claude-settings:<name>), autoCheckUpdates (true|false), displayMode (full|percent-only|bar-dots|number-bar|time-to-reset)"
+    echo "  Keys: plan (max|pro|team|enterprise|unknown|plus|business|edu), tokenSource (claude-code|opencode|codex|github|claude-settings:<name>), autoCheckUpdates (true|false), displayMode (full|percent-only|bar-dots|number-bar|time-to-reset)"
     exit 0
 fi
 
@@ -187,7 +187,7 @@ case "$choice" in
         if [[ -f "$SCRIPT_DIR/../lib/cli-list-settings.js" ]]; then
             settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" --format=walker 2>/dev/null)
         fi
-        all_options=("claude-code" "opencode" "codex")
+        all_options=("claude-code" "opencode" "codex" "github")
         if [[ -n "$settings_list" ]]; then
             while IFS= read -r line; do
                 [[ -z "$line" ]] && continue
