@@ -266,7 +266,7 @@ describe('ai-gauge-tray', () => {
     server.send(usage(30));
     await waitFor(() => tray.commands().then((list) => list.find((cmd) => cmd.cmd === 'set-menu')), { label: 'menu ready' });
     await tray.inject({ event: 'menu-click', id: 'refresh-now' });
-    await waitFor(() => server.requests.find((req) => req.command === 'refresh'), { label: 'refresh request' });
+    await waitFor(() => server.requests.find((req) => req.type === 'refresh'), { label: 'refresh request' });
   });
 
   it('sends setConfig tokenSource over websocket on token source click', async () => {

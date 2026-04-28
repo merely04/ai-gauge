@@ -174,7 +174,7 @@ async function handleEvent(event) {
 }
 
 async function handleMenuClick(id) {
-  if (id === 'refresh-now') return sendWs({ command: 'refresh' });
+  if (id === 'refresh-now') return sendWs({ type: 'refresh' });
   if (id === 'restart-server') {
     Bun.spawn(['systemctl', '--user', 'restart', 'ai-gauge-server'], { stdin: 'ignore', stdout: 'ignore', stderr: 'inherit' });
     return;
