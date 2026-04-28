@@ -279,6 +279,7 @@ cmd_setup_linux() {
 
     _patch_waybar_config() {
         if [[ ! -f "$WAYBAR_CONFIG" ]]; then
+            echo "  Waybar config.jsonc not found at $WAYBAR_CONFIG (skipped — install Waybar to enable UI)"
             return
         fi
         local action
@@ -296,8 +297,15 @@ cmd_setup_linux() {
     }
 
     _patch_waybar_css() {
-        if [[ -f "$WAYBAR_STYLE" ]] && ! grep -q '#custom-ai-gauge' "$WAYBAR_STYLE"; then
-            cat >> "$WAYBAR_STYLE" << 'CSS'
+        if [[ ! -f "$WAYBAR_STYLE" ]]; then
+            echo "  Waybar style.css not found at $WAYBAR_STYLE (skipped — install Waybar to enable UI)"
+            return
+        fi
+        if grep -q '#custom-ai-gauge' "$WAYBAR_STYLE"; then
+            echo "  CSS already patched (skipped)"
+            return
+        fi
+        cat >> "$WAYBAR_STYLE" << 'CSS'
 
 /* ai-gauge-start */
 #custom-ai-gauge {
@@ -336,13 +344,18 @@ cmd_setup_linux() {
 }
 /* ai-gauge-end */
 CSS
-            echo "  Patched waybar style.css"
-        else
-            echo "  CSS already patched (skipped)"
-        fi
+        echo "  Patched waybar style.css"
     }
 
     _restart_waybar() {
+        # Skip restart on systems without waybar (e.g. KDE Plasma, GNOME).
+        # Without this guard the function would pkill nothing, then setsid
+        # a non-existent binary — both fail silently — yet still print
+        # "Restarted waybar" misleadingly.
+        if ! command -v waybar &>/dev/null; then
+            echo "  Waybar binary not found in PATH (skipped restart)"
+            return
+        fi
         if command -v omarchy-restart-waybar &>/dev/null; then
             omarchy-restart-waybar
         else
@@ -352,7 +365,12 @@ CSS
             # path migration after an ai-gauge upgrade), SIGUSR2 won't pick that
             # up — waybar silently fails to find ai-gauge-waybar and the module
             # disappears. A fresh process inherits the current PATH.
-            pkill -x waybar 2>/dev/null
+            #
+            # `|| true` on pkill: pkill returns exit 1 when no process matches,
+            # which under `set -euo pipefail` would abort the function before
+            # the restart completes (cold-start case: waybar binary installed
+            # but not yet running, e.g. fresh install or after manual stop).
+            pkill -x waybar 2>/dev/null || true
             sleep 0.3
             setsid waybar >/dev/null 2>&1 &
             disown 2>/dev/null || true
@@ -369,6 +387,25 @@ CSS
     setup_skip_or_run "waybar config patch" _patch_waybar_config
     setup_skip_or_run "waybar css patch" _patch_waybar_css
     setup_skip_or_run "waybar restart" _restart_waybar
+
+    # Detect whether any UI client integrated. If neither Waybar nor StreamDock
+    # is present, the daemon is running headless — broadcast on
+    # ws://localhost:19876 works but the user has no built-in display surface
+    # (e.g. GNOME without extensions). Print explicit guidance so the user
+    # understands their state instead of seeing a blanket "Done!" that implies
+    # UI was set up.
+    local _streamdock_plugins="$HOME/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins"
+    if ! command -v waybar &>/dev/null && [[ ! -d "$_streamdock_plugins" ]]; then
+        cat <<EOF
+
+Note: no UI client detected (Waybar / StreamDock not installed).
+  ai-gauge-server is running and broadcasting on ws://localhost:19876.
+  Read state directly:
+    jq . "\${XDG_RUNTIME_DIR:-/tmp}/ai-gauge/usage.json"
+  See the WebSocket protocol in AGENTS.md to build a custom client
+  (e.g. KDE Plasma plasmoid, GNOME extension, polybar module).
+EOF
+    fi
 
     echo "Done!"
 }
@@ -487,16 +524,23 @@ with open(path, 'w') as f:
         echo "  Removed StreamDock plugin"
     fi
 
-    # Restart waybar (hard restart for consistency — see _restart_waybar in cmd_setup_linux)
-    if command -v omarchy-restart-waybar &>/dev/null; then
-        omarchy-restart-waybar
+    # Restart waybar (hard restart for consistency — see _restart_waybar in cmd_setup_linux).
+    # Guard on waybar binary presence: KDE/GNOME/etc. users don't have waybar installed,
+    # and previously this block always printed "Restarted waybar" misleadingly.
+    if command -v waybar &>/dev/null; then
+        if command -v omarchy-restart-waybar &>/dev/null; then
+            omarchy-restart-waybar
+        else
+            # See cmd_setup_linux _restart_waybar for `|| true` rationale.
+            pkill -x waybar 2>/dev/null || true
+            sleep 0.3
+            setsid waybar >/dev/null 2>&1 &
+            disown 2>/dev/null || true
+        fi
+        echo "  Restarted waybar"
     else
-        pkill -x waybar 2>/dev/null
-        sleep 0.3
-        setsid waybar >/dev/null 2>&1 &
-        disown 2>/dev/null || true
+        echo "  Waybar binary not found in PATH (skipped restart)"
     fi
-    echo "  Restarted waybar"
 
     echo "Done! Run 'bun remove -g ai-gauge' to remove the package itself."
 }
