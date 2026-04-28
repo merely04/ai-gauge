@@ -45,7 +45,7 @@ A few other tools do similar things. Which one fits depends on what you actually
 | Linux Waybar module | ✅ | ✅ | ✅ | ✅ |
 | Real-time WebSocket push | ✅ (60s poll, instant broadcast) | — polling | — polling | — polling |
 | Supported providers | 6 real + 2 stubs | 4 | 3 | 2 |
-| GitHub Copilot support | — | ✅ | — | — |
+| GitHub Copilot support | ✅ | ✅ | — | — |
 | Gemini CLI support | — | — | ✅ | — |
 | Browser cookie auth (no API keys) | — | ✅ Chrome/Firefox | — | — |
 | StreamDock physical-key plugin | ✅ Fifine D6 | — | — | — |
@@ -67,7 +67,7 @@ A few other tools do similar things. Which one fits depends on what you actually
 
 ### Where competitors are stronger
 
-- **NihilDigit/waybar-ai-usage** is the right pick if you use GitHub Copilot or want browser-cookie auth (no credential files to manage, works with Chrome/Firefox sessions out of the box)
+- **NihilDigit/waybar-ai-usage** is the right pick if you want browser-cookie auth (no credential files to manage, works with Chrome/Firefox sessions out of the box)
 - **komagata/ai-quota-waybar** is the right pick if you use Gemini CLI and want a zero-dependency pure Bash solution with no Bun requirement
 - **andresreibel/ClaudeBar** has a clean click-to-toggle UX between Claude and Codex and handles 429 backoff gracefully with cached payloads
 
@@ -251,7 +251,7 @@ ai-gauge-config set tokenSource opencode
 
 | Field | Values | Description |
 |-------|--------|-------------|
-| `tokenSource` | `claude-code` (default), `opencode`, `codex`, `claude-settings:<name>` | OAuth credential source |
+| `tokenSource` | `claude-code` (default), `opencode`, `codex`, `github`, `claude-settings:<name>` | OAuth credential source |
 | `plan` | `max`, `pro`, `team`, `enterprise`, `unknown` (Anthropic) <br> `plus`, `pro`, `business`, `enterprise`, `edu` (Codex) | Subscription plan (shown in tooltip) |
 | `displayMode` | `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset` | Display format for menubar/waybar |
 
@@ -262,6 +262,28 @@ ai-gauge-config set tokenSource opencode
 ai-gauge-config set plan max
 ai-gauge-config get
 ```
+
+## GitHub Copilot
+
+ai-gauge can monitor your Copilot monthly premium-request quota for Individual plans (Free, Pro, Pro+).
+
+```bash
+# Works with default gh storage (Keychain on macOS, Secret Service on Linux, or --insecure-storage plaintext)
+gh auth login
+ai-gauge-config set tokenSource github
+systemctl --user restart ai-gauge-server   # Linux
+# macOS: launchctl kickstart -k gui/$(id -u)/com.ai-gauge.server
+```
+
+ai-gauge calls `gh auth token --hostname github.com` at each poll, so any gh storage backend (Keychain on macOS, Secret Service on Linux, or `--insecure-storage` plaintext) works out of the box.
+
+**Headless / CI mode**: If `gh` binary is unavailable, copy a `gho_*` OAuth token (obtained via `gh auth token --hostname github.com` on a workstation) into `~/.config/ai-gauge/copilot-token` (single-line plain text file). The daemon falls back to this file when both Tier 1 (shell-out) and Tier 2 (hosts.yml plaintext) fail.
+
+> **Important — PAT compatibility**: Classic Personal Access Tokens (`ghp_*`) and fine-grained PATs (`github_pat_*`) **do not work** for Copilot quota monitoring — the `/copilot_internal/v2/token` endpoint requires the OAuth token (`gho_*`) issued by `gh auth login`. ai-gauge will reject any other token format with a clear error log.
+
+**Limitations**: v1 supports Individual plans only (Free/Pro/Pro+). Business/Enterprise quotas deferred to v1.1. GitHub Enterprise Server not supported. Multi-account gh CLI uses first `github.com:` block only.
+
+> Note: ai-gauge mirrors official VS Code Copilot extension headers to authenticate the internal API. If GitHub changes their internal API contract, ai-gauge may break temporarily — please file an issue.
 
 ## OpenAI Codex (ChatGPT subscription)
 
@@ -406,6 +428,7 @@ The button connects to `ai-gauge-server` via WebSocket and updates in real time.
 - **Claude Code / OpenCode (Anthropic OAuth)** → `https://api.anthropic.com/api/oauth/usage`
 - **OpenAI Codex** → `https://chatgpt.com/backend-api/wham/usage` (with JSONL fallback to `~/.codex/sessions/`)
 - **OpenCode dual mode** → both endpoints in parallel, broadcast carries a top-level `secondary` field for the second provider's data
+- **GitHub Copilot** → `https://api.github.com/copilot_internal/v2/token` (authenticated via `gh auth token` shell-out → fallback to `~/.config/gh/hosts.yml` → fallback to `~/.config/ai-gauge/copilot-token`)
 - **Custom `claude-settings:*` providers** → whatever `ANTHROPIC_BASE_URL` you configure (Z.ai, MiniMax, OpenRouter, Komilion, Packy)
 
 Results are broadcast to all connected WebSocket clients on `ws://localhost:19876`.
