@@ -116,6 +116,7 @@ async function startTray(extraEnv = {}) {
       FAKE_HELPER_LOG_FILE: helperLog,
       FAKE_HELPER_INJECT_FILE: injectFile,
       FAKE_HELPER_EXIT_AFTER_INIT: extraEnv.FAKE_HELPER_EXIT_AFTER_INIT || '0',
+      FAKE_HELPER_EXIT_AFTER_N_LINES: extraEnv.FAKE_HELPER_EXIT_AFTER_N_LINES || '0',
     },
     stdin: 'ignore',
     stdout: Bun.file(stdoutFile),
@@ -289,6 +290,24 @@ describe('ai-gauge-tray', () => {
     });
     await waitForConnect(server);
     await waitFor(async () => (await tray.commands()).filter((cmd) => cmd.cmd === 'init').length >= 2, { timeout: 3000, label: 'helper restart' });
+  });
+
+  it('resyncs full state to helper after restart (icon + status + tooltip + menu)', async () => {
+    const server = await startMockServer();
+    const tray = await startTray({
+      AIGAUGE_WS_URL: server.url,
+      AIGAUGE_TRAY_HELPER_RESTART_INITIAL_DELAY_MS: '100',
+      FAKE_HELPER_EXIT_AFTER_N_LINES: '5',
+    });
+    await waitForConnect(server);
+    await waitFor(async () => {
+      const cmds = await tray.commands();
+      const inits = cmds.filter((cmd) => cmd.cmd === 'init').length;
+      if (inits < 2) return false;
+      const initIdxs = cmds.map((cmd, i) => (cmd.cmd === 'init' ? i : -1)).filter((i) => i >= 0);
+      const after = cmds.slice(initIdxs[1] + 1).map((cmd) => cmd.cmd);
+      return after.includes('set-icon') && after.includes('set-status') && after.includes('set-tooltip') && after.includes('set-menu');
+    }, { timeout: 5000, step: 50, label: 'full resync after restart' });
   });
 
   it('exits 0 after five watcher-unavailable events', async () => {

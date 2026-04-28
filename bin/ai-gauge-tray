@@ -271,7 +271,14 @@ function spawnHelper() {
     stderr: 'inherit',
   });
   helperProc = proc;
-  helperRestartDelay = HELPER_RESTART_INITIAL_DELAY;
+  // Reset diff-cache so the new helper instance receives a full state snapshot.
+  // Without this, after a helper crash + respawn the new process stays in the
+  // default empty state (waiting icon, blank menu) until the next broadcast
+  // changes something.
+  lastSentIcon = null;
+  lastSentStatus = null;
+  lastSentTooltip = null;
+  lastSentMenuHash = null;
   readHelperStdout(proc);
   sendCmd({ cmd: 'init', title: 'AI Gauge', category: 'ApplicationStatus', id: 'ai-gauge' });
   flushHelper();
