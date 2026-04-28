@@ -469,7 +469,7 @@ ai-gauge is early — first users still arriving. Feedback at any level helps:
 - **Questions, install issues, "how do I do X"** → [Discussions / Q&A](https://github.com/merely04/ai-gauge/discussions/categories/q-a)
 - **Feature ideas, brainstorming** → [Discussions / Ideas](https://github.com/merely04/ai-gauge/discussions/categories/ideas)
 - **Confirmed bugs with repro steps** → [Open an Issue](https://github.com/merely04/ai-gauge/issues/new?template=bug_report.yml)
-- **Request a new AI provider** (DeepSeek, Groq, Gemini, Copilot, etc.) → [Provider Request](https://github.com/merely04/ai-gauge/issues/new?template=provider_request.yml)
+- **Request a new AI provider** (DeepSeek, Groq, Gemini, Cursor, etc.) → [Provider Request](https://github.com/merely04/ai-gauge/issues/new?template=provider_request.yml)
 - **Show off your setup** → [Discussions / Show and tell](https://github.com/merely04/ai-gauge/discussions/categories/show-and-tell)
 
 Read the [welcome post](https://github.com/merely04/ai-gauge/discussions/3) for the full triage map.
