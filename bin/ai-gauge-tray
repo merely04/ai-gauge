@@ -162,7 +162,6 @@ async function handleEvent(event) {
         await shutdownAndExit(0);
         return;
       }
-      setTimeout(spawnHelper, 60_000);
       break;
     case 'helper-error':
       if (event.reason === 'dbus-import-failed') {
@@ -285,6 +284,15 @@ function spawnHelper() {
   proc.exited.then((code) => {
     if (helperProc === proc) helperProc = null;
     if (exiting || helperShutdownRequested) return;
+    // Watcher-unavailable path: helper exits 2 after emitting the event. Use
+    // the slow 60s retry instead of the generic crash backoff to honor the
+    // "5 attempts, 60s apart" contract from IPC.md without two competing
+    // timers (one from the event handler, one here).
+    if (code === 2) {
+      logJson(console.error, 'tray-helper-exited', { code, retry: 'watcher-60s' });
+      setTimeout(spawnHelper, 60_000);
+      return;
+    }
     logJson(console.error, 'tray-helper-exited', { code, restartDelay: helperRestartDelay });
     const delay = helperRestartDelay;
     setTimeout(spawnHelper, delay);
