@@ -75,6 +75,7 @@ async function readCredentials(config) {
         source: 'opencode',
         provider: 'anthropic',
         secondary: c.secondary ? c.secondary.provider : null,
+        copilotSecondary: c.copilotSecondary ? c.copilotSecondary.provider : null,
       });
       return { ...c, tokenSource: src, provider: 'anthropic', baseUrl: null };
     }
@@ -315,13 +316,16 @@ async function fetchUsage(creds, config, { generation, signal, _retriedAfterAuth
 
     if (generation != null && generation !== fetchGeneration) return false;
 
-    const secondary = creds.secondary ? await fetchSecondary(creds.secondary, signal) : null;
+    const [secondary, copilotSecondary] = await Promise.all([
+      creds.secondary ? fetchSecondary(creds.secondary, signal) : null,
+      creds.copilotSecondary ? fetchCopilotSecondary(creds.copilotSecondary, signal) : null,
+    ]);
     if (generation != null && generation !== fetchGeneration) return false;
 
     cachedData = {
       ...(parsed.rateLimits ?? {}),
       balance: parsed.balance ?? null,
-      copilot: parsed.copilot ?? null,
+      copilot: parsed.copilot ?? copilotSecondary ?? null,
       secondary,
       meta: buildMeta(effectiveConfig, {
         subscriptionType: creds.subscriptionType,
@@ -390,6 +394,51 @@ async function fetchSecondary(secondaryCreds, signal) {
   } catch (err) {
     if (signal?.aborted) return null;
     logJson(console.warn, 'secondary_fetch_error', { provider: secondaryCreds.provider, ...sanitizeError(err) });
+    return null;
+  }
+}
+
+async function fetchCopilotSecondary(copilotCreds, signal) {
+  if (!copilotCreds?.token) return null;
+  if (copilotCreds.expiresAt !== null && !isTokenValid(copilotCreds.expiresAt)) {
+    logJson(console.error, 'copilot_secondary_token_expired', { provider: 'copilot' });
+    return null;
+  }
+
+  const adapter = getProvider('copilot');
+
+  try {
+    const req = adapter.buildRequest({ token: copilotCreds.token });
+    const timeoutSignal = AbortSignal.timeout(10_000);
+    const fetchSignal = signal && typeof AbortSignal.any === 'function'
+      ? AbortSignal.any([signal, timeoutSignal])
+      : timeoutSignal;
+
+    const res = await doFetch(req.url, {
+      method: req.method ?? 'GET',
+      headers: req.headers,
+      redirect: 'manual',
+      signal: fetchSignal,
+    });
+
+    if (res.status >= 300 && res.status < 400) return null;
+
+    let json = null;
+    try { json = await res.json(); } catch {}
+
+    const parsed = adapter.parseResponse(json, res.status);
+    if (parsed.error) {
+      logJson(console.warn, 'copilot_secondary_provider_error', {
+        provider: 'copilot',
+        ...sanitizeError(new Error(parsed.error.reason ?? 'unknown')),
+      });
+      return null;
+    }
+
+    return parsed.copilot ?? null;
+  } catch (err) {
+    if (signal?.aborted) return null;
+    logJson(console.warn, 'copilot_secondary_fetch_error', { provider: 'copilot', ...sanitizeError(err) });
     return null;
   }
 }

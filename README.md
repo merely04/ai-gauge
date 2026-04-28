@@ -29,7 +29,7 @@
 - **Right-click menu** — refresh, copy stats, change plan / token source with checkmarks (macOS), open settings
 - **StreamDock plugin** — usage stats on a physical key (Fifine AmpliGame D6)
 - **Multiple token sources** — Claude Code CLI, OpenCode, or OpenAI Codex CLI
-- **OpenCode dual mode** — when OpenCode has both Anthropic and OpenAI OAuth logins, the tooltip shows Claude AND Codex usage side-by-side in a single view
+- **OpenCode tri-mode** — when OpenCode has Anthropic, OpenAI, and/or GitHub Copilot OAuth logins, the tooltip shows all three providers' usage side-by-side in a single view
 - **Codex JSONL fallback** — if `chatgpt.com/wham/usage` is unreachable, parses `~/.codex/sessions/*.jsonl` for the latest rate-limit snapshot
 - **WebSocket architecture** — one server broadcasts to all clients in real time
 - **systemd / launchd service** — starts on login, auto-restarts on failure
@@ -49,7 +49,7 @@ A few other tools do similar things. Which one fits depends on what you actually
 | Gemini CLI support | — | — | ✅ | — |
 | Browser cookie auth (no API keys) | — | ✅ Chrome/Firefox | — | — |
 | StreamDock physical-key plugin | ✅ Fifine D6 | — | — | — |
-| Claude + Codex side-by-side view | ✅ OpenCode dual mode | — | — | — |
+| Claude + Codex + Copilot side-by-side view | ✅ OpenCode tri-mode | — | — | — |
 | Auto-update system | ✅ npm registry | — | — | — |
 | Zero npm runtime dependencies | ✅ | — (browser_cookie3) | ✅ pure Bash | — |
 | Stack | Bun JS + Swift | Python | Bash + jq | TypeScript + Bun |
@@ -160,7 +160,7 @@ Sonnet:  0%
 Extra: $171.22/$200 (86%)
 ```
 
-When `tokenSource: opencode` and your OpenCode auth file carries both Anthropic and OpenAI OAuth, you see both providers in one tooltip:
+When `tokenSource: opencode` and your OpenCode auth file carries any combination of Anthropic, OpenAI, and GitHub Copilot OAuth logins, the tooltip shows all of them side-by-side in a single view:
 
 ![multi-provider tooltip](assets/macos-multi-provider.png)
 
@@ -176,7 +176,14 @@ Extra: $204.10/$200 (100%)
 Codex
 5-hour:  24%  (resets in 4h 12m)
 Weekly:  15%  (resets in 3d 11h 44m)
+───────────────
+GitHub Copilot
+Plan:    pro
+Premium: 50%  (150/300)
+Resets:  in 3d 12h
 ```
+
+OpenCode logs into Copilot via Device Flow OAuth (`opencode auth login github-copilot`), storing the `gho_*` token in `~/.local/share/opencode/auth.json`. ai-gauge picks it up automatically — no extra configuration needed when `tokenSource: opencode`.
 
 The current plan and token source are reflected as **checkmarks in the submenu** (macOS) and in the Linux tooltip footer.
 
@@ -427,7 +434,7 @@ The button connects to `ai-gauge-server` via WebSocket and updates in real time.
 
 - **Claude Code / OpenCode (Anthropic OAuth)** → `https://api.anthropic.com/api/oauth/usage`
 - **OpenAI Codex** → `https://chatgpt.com/backend-api/wham/usage` (with JSONL fallback to `~/.codex/sessions/`)
-- **OpenCode dual mode** → both endpoints in parallel, broadcast carries a top-level `secondary` field for the second provider's data
+- **OpenCode tri-mode** → all available endpoints fetched in parallel; broadcast carries a top-level `secondary` field for Codex/OpenAI and a top-level `copilot` field for GitHub Copilot, when those OAuth blocks are present in the OpenCode auth file
 - **GitHub Copilot** → `https://api.github.com/copilot_internal/v2/token` (authenticated via `gh auth token` shell-out → fallback to `~/.config/gh/hosts.yml` → fallback to `~/.config/ai-gauge/copilot-token`)
 - **Custom `claude-settings:*` providers** → whatever `ANTHROPIC_BASE_URL` you configure (Z.ai, MiniMax, OpenRouter, Komilion, Packy)
 
