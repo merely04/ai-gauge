@@ -14,6 +14,10 @@ const HELPER_RESTART_INITIAL_DELAY = Number(Bun.env.AIGAUGE_TRAY_HELPER_RESTART_
 const WS_URL = Bun.env.AIGAUGE_WS_URL || 'ws://localhost:19876';
 const HELPER_RESTART_MAX_DELAY = 30_000;
 const HELPER_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'sni-tray', 'sni-helper.py');
+// Resolve sibling absolute path: systemd freezes PATH at unit start, so a bare
+// 'ai-gauge-config' name may fail to find the binary after a bun/pnpm/mise
+// upgrade that moves global symlinks. Same lesson as ai-gauge-waybar.
+const CONFIG_BIN_PATH = resolve(dirname(fileURLToPath(import.meta.url)), 'ai-gauge-config');
 
 let lastUsageCache = null;
 let lastUpdateState = emptyUpdateState();
@@ -139,7 +143,7 @@ async function shutdownAndExit(code) {
 async function handleEvent(event) {
   switch (event.event) {
     case 'activate':
-      Bun.spawn(['ai-gauge-config'], { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' });
+      Bun.spawn([CONFIG_BIN_PATH], { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' });
       break;
     case 'secondary-activate':
     case 'context-menu':
@@ -189,7 +193,7 @@ async function handleMenuClick(id) {
     return;
   }
   if (id === 'open-settings') {
-    Bun.spawn(['ai-gauge-config'], { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' });
+    Bun.spawn([CONFIG_BIN_PATH], { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' });
     return;
   }
   if (id === 'quit') {
