@@ -277,6 +277,61 @@ cmd_setup_linux() {
         fi
     }
 
+    # SNI tray helpers — same lesson as waybar: resolve to ABSOLUTE paths so
+    # systemd's frozen PATH doesn't break the unit after a bun/pnpm/mise upgrade
+    # that moves the symlinks.
+    _resolve_tray_path() {
+        local TRAY_BIN_PATH
+        TRAY_BIN_PATH=$(command -v ai-gauge-tray 2>/dev/null || true)
+        [[ -z "$TRAY_BIN_PATH" ]] && TRAY_BIN_PATH="$BIN_DIR/ai-gauge-tray"
+        if [[ ! -f "$TRAY_BIN_PATH" ]]; then
+            echo ""
+            return
+        fi
+        resolve_path "$TRAY_BIN_PATH"
+    }
+
+    _detect_sni_capable() {
+        if [[ "${AIGAUGE_TEST_FORCE_NO_SNI:-}" == "1" ]]; then
+            return 1
+        fi
+        python3 -c 'import dbus; from gi.repository import GLib' 2>/dev/null || return 1
+        gdbus introspect --session \
+            --dest org.kde.StatusNotifierWatcher \
+            --object-path /StatusNotifierWatcher 2>/dev/null > /dev/null || return 1
+        return 0
+    }
+
+    _install_sni_icons() {
+        local ICONS_SRC="$LIB_DIR/sni-tray/icons"
+        local ICONS_DST="$HOME/.local/share/icons/hicolor/scalable/apps"
+        mkdir -p "$ICONS_DST"
+        cp "$ICONS_SRC"/ai-gauge-*.svg "$ICONS_DST/" 2>/dev/null || true
+        gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+        echo "  Installed SNI tray icons → $ICONS_DST"
+    }
+
+    _install_sni_tray_unit() {
+        local TRAY_PATH
+        TRAY_PATH=$(_resolve_tray_path)
+        if [[ -z "$TRAY_PATH" ]]; then
+            echo "  ai-gauge-tray binary not found (skipped — package missing entry?)"
+            return 1
+        fi
+        local TRAY_SRC="$LIB_DIR/ai-gauge-tray.service"
+        local TRAY_DST="$SYSTEMD_DIR/ai-gauge-tray.service"
+        sed -e "s|__BUN_PATH__|$BUN_PATH|g" \
+            -e "s|__TRAY_PATH__|$TRAY_PATH|g" \
+            "$TRAY_SRC" > "$TRAY_DST"
+        echo "  Installed ai-gauge-tray.service → $TRAY_DST"
+    }
+
+    _enable_sni_tray_service() {
+        systemctl --user enable ai-gauge-tray 2>/dev/null || true
+        systemctl --user restart ai-gauge-tray 2>/dev/null || true
+        echo "  Enabled and (re)started ai-gauge-tray systemd service"
+    }
+
     _patch_waybar_config() {
         if [[ ! -f "$WAYBAR_CONFIG" ]]; then
             echo "  Waybar config.jsonc not found at $WAYBAR_CONFIG (skipped — install Waybar to enable UI)"
@@ -388,14 +443,32 @@ CSS
     setup_skip_or_run "waybar css patch" _patch_waybar_css
     setup_skip_or_run "waybar restart" _restart_waybar
 
+    # SNI tray (KDE Plasma 6, Cinnamon, XFCE, etc. — non-Waybar Linux DEs).
+    # Detection: requires gdbus + python3-dbus + python3-gi + a running SNI watcher.
+    # In dry-run mode, all four steps run through setup_skip_or_run so tests can assert wiring.
+    # AIGAUGE_TEST_FORCE_NO_SNI=1 forces the "not available" branch even under dry-run.
+    if [[ "${AIGAUGE_TEST_FORCE_NO_SNI:-}" != "1" ]] && \
+       { [[ "${AIGAUGE_SETUP_DRY_RUN:-0}" == "1" ]] || _detect_sni_capable; }; then
+        setup_skip_or_run "sni icons install" _install_sni_icons
+        setup_skip_or_run "sni tray unit install" _install_sni_tray_unit
+        setup_skip_or_run "systemctl daemon-reload (sni tray)" systemctl --user daemon-reload
+        setup_skip_or_run "sni tray enable" _enable_sni_tray_service
+    else
+        echo "  SNI tray not available (skipped — install Plasma/KDE/Cinnamon + python3-dbus + python3-gi to enable)"
+    fi
+
     # Detect whether any UI client integrated. If neither Waybar nor StreamDock
-    # is present, the daemon is running headless — broadcast on
+    # nor SNI tray is present, the daemon is running headless — broadcast on
     # ws://localhost:19876 works but the user has no built-in display surface
     # (e.g. GNOME without extensions). Print explicit guidance so the user
     # understands their state instead of seeing a blanket "Done!" that implies
     # UI was set up.
     local _streamdock_plugins="$HOME/.wine/drive_c/users/$USER/AppData/Roaming/HotSpot/StreamDock/plugins"
-    if ! command -v waybar &>/dev/null && [[ ! -d "$_streamdock_plugins" ]]; then
+    local _sni_installed=0
+    if [[ -f "$SYSTEMD_DIR/ai-gauge-tray.service" ]]; then
+        _sni_installed=1
+    fi
+    if ! command -v waybar &>/dev/null && [[ ! -d "$_streamdock_plugins" ]] && [[ "$_sni_installed" == "0" ]]; then
         cat <<EOF
 
 Note: no UI client detected (Waybar / StreamDock not installed).
@@ -456,6 +529,20 @@ cmd_uninstall() {
     rm -f "$HOME/.config/systemd/user/ai-gauge-server.service"
     systemctl --user daemon-reload 2>/dev/null || true
     echo "  Stopped and removed ai-gauge-server service"
+
+    # SNI tray cleanup: stop+disable+remove unit, remove icons, refresh icon cache
+    systemctl --user stop ai-gauge-tray 2>/dev/null || true
+    systemctl --user disable ai-gauge-tray 2>/dev/null || true
+    if [[ -f "$HOME/.config/systemd/user/ai-gauge-tray.service" ]]; then
+        rm -f "$HOME/.config/systemd/user/ai-gauge-tray.service"
+        echo "  Removed ai-gauge-tray.service"
+    fi
+    local SNI_ICON_DST="$HOME/.local/share/icons/hicolor/scalable/apps"
+    if [[ -d "$SNI_ICON_DST" ]]; then
+        rm -f "$SNI_ICON_DST"/ai-gauge-{normal,waiting,warning,critical,update-available,updating}.svg
+        gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+        echo "  Removed SNI tray icons"
+    fi
 
     # Clean waybar config
     if [[ -f "$WAYBAR_CONFIG" ]] && grep -q '"custom/ai-gauge"' "$WAYBAR_CONFIG"; then
