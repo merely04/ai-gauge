@@ -7,6 +7,7 @@ import { createThresholdNotifier } from '../lib/threshold-notify.js';
 import { createUpdateLifecycle } from '../lib/update-lifecycle.js';
 import { atomicWriteJSON } from '../lib/atomic-write.js';
 import { readClaudeCodeCredentials, readOpenCodeCredentials, isTokenValid, CREDS_FILE, OPENCODE_AUTH_FILE_PRIMARY, OPENCODE_AUTH_FILE_MAC } from '../lib/credentials.js';
+import { readCopilotCredentials } from '../lib/credentials-copilot.js';
 import { readCodexCredentials } from '../lib/credentials-codex.js';
 import { discoverSettingsFiles, readSettingsFileForCreds } from '../lib/settings-discovery.js';
 import { logJson, sanitizeError } from '../lib/log-safe.js';
@@ -20,6 +21,7 @@ import '../lib/providers/minimax.js';
 import '../lib/providers/openrouter.js';
 import '../lib/providers/komilion.js';
 import '../lib/providers/packy.js';
+import '../lib/providers/copilot.js';
 import '../lib/providers/codex.js';
 import '../lib/providers/unknown.js';
 
@@ -88,6 +90,23 @@ async function readCredentials(config) {
     }
     logJson(console.error, 'credentials_missing', { source: 'codex' });
     return null;
+  }
+
+  if (src === 'github') {
+    const c = await readCopilotCredentials();
+    if (!c) {
+      logJson(console.error, 'credentials_missing', { source: 'github', reason: 'no-gh-cli-no-pat' });
+      return null;
+    }
+    logJson(console.error, 'credentials_loaded', { source: 'github', provider: 'copilot', credSource: c.source });
+    return {
+      token: c.token,
+      expiresAt: null,
+      subscriptionType: 'unknown',
+      tokenSource: src,
+      baseUrl: null,
+      provider: 'copilot',
+    };
   }
 
   if (src.startsWith('claude-settings:')) {
@@ -260,7 +279,7 @@ async function fetchUsage(creds, config, { generation, signal, _retriedAfterAuth
     if (parsed.error) {
       const status = parsed.error.status;
       const isAuthError = status === 401 || status === 403;
-      if (isAuthError && !_retriedAfterAuth && providerName === 'anthropic' && creds.tokenSource && !creds.baseUrl) {
+      if (isAuthError && !_retriedAfterAuth && (providerName === 'anthropic' || providerName === 'copilot') && creds.tokenSource && !creds.baseUrl) {
         const fresh = await rereadCredentials(effectiveConfig);
         if (fresh?.token && fresh.token !== creds.token) {
           logJson(console.warn, 'token_rotation_retry', { provider: providerName, status });
