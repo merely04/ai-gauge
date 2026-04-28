@@ -3,16 +3,21 @@ import '../lib/providers/anthropic.js';
 import { getProvider, detectProviderByBaseUrl, PROVIDER_NAMES, registerProvider } from '../lib/providers/index.js';
 
 describe('Provider Registry', () => {
-  it('PROVIDER_NAMES includes all 8 providers', () => {
+  it('PROVIDER_NAMES includes all 9 providers', () => {
     expect(PROVIDER_NAMES).toContain('anthropic');
     expect(PROVIDER_NAMES).toContain('zai');
     expect(PROVIDER_NAMES).toContain('codex');
+    expect(PROVIDER_NAMES).toContain('copilot');
     expect(PROVIDER_NAMES).toContain('unknown');
-    expect(PROVIDER_NAMES).toHaveLength(8);
+    expect(PROVIDER_NAMES).toHaveLength(9);
   });
 
   it('includes codex', () => {
     expect(PROVIDER_NAMES).toContain('codex');
+  });
+
+  it('includes copilot', () => {
+    expect(PROVIDER_NAMES).toContain('copilot');
   });
 
   it('detects chatgpt.com as codex', () => {
