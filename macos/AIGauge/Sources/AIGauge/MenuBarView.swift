@@ -11,7 +11,8 @@ struct MenuBarView: View {
     private let sources: [(value: String, display: String)] = [
         ("claude-code", "Claude Code"),
         ("opencode", "OpenCode"),
-        ("codex", "Codex")
+        ("codex", "Codex"),
+        ("github", "GitHub Copilot")
     ]
     private let displayModes: [(value: String, display: String)] = [
         (value: "full", display: "Full"),
@@ -263,6 +264,7 @@ struct MenuBarView: View {
         case .ok: return Color.primary
         case .warning: return .orange
         case .critical: return .red
+        case .waiting: return Color.secondary
         }
     }
 }
