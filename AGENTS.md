@@ -57,6 +57,7 @@ Token sources (config `tokenSource` field):
 - `claude-code` (default): on macOS reads from **Keychain** first (service name `Claude Code-credentials`, or `Claude Code-credentials-{sha256(CLAUDE_CONFIG_DIR)[:8]}` when `CLAUDE_CONFIG_DIR` is set — matches Claude Code's own scheme as of v2.0.14+). Falls back to `~/.claude/.credentials.json` on Keychain miss, "User interaction is not allowed" (SSH/headless sessions), spawn timeout (3s), or malformed payload. On Linux: file only. Both formats accepted: `{ claudeAiOauth: { accessToken, expiresAt, subscriptionType } }` (legacy nested) and flat `{ accessToken, expiresAt, refreshToken, subscriptionType }`.
 - `opencode`: reads `~/.local/share/opencode/auth.json` → `anthropic.access` / `anthropic.expires`. If the same file ALSO contains an `openai` block with `type: "oauth"`, `access`, and `accountId`, the daemon makes a parallel fetch to `https://chatgpt.com/backend-api/wham/usage` and broadcasts the result under the top-level `secondary` field (best-effort — primary broadcast still succeeds when secondary fails).
 - `codex`: reads `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`) → `tokens.access_token` / `tokens.account_id`. Fetches `https://chatgpt.com/backend-api/wham/usage` (undocumented endpoint; reverse-engineered, may change). Falls back to JSONL session parsing at `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` on HTTP 4xx/5xx or network failure.
+- `github`: reads credentials via three tiers in order. Tier 1: `gh auth token --hostname github.com` (works for Keychain, Secret Service, and plaintext stores). Tier 2: `~/.config/gh/hosts.yml` plaintext fallback. Tier 3: `~/.config/ai-gauge/copilot-token` file (accepts `gho_*` OAuth tokens only). Fetches `/copilot_internal/v2/token` (single-shot, short-lived token exchange). Plan auto-detected from the `limit` field in the response: 50 = free, 300 = pro, 1500 = pro-plus.
 
 State/config paths (never relocate without updating every script):
 
@@ -89,7 +90,7 @@ Each adapter exports a default object with:
 }
 ```
 
-Providers: `anthropic` (OAuth), `zai`, `minimax` (api-key), `openrouter`, `komilion` (credit-balance), `packy`, `unknown` (stub).
+Providers: `anthropic` (OAuth), `zai`, `minimax` (api-key), `openrouter`, `komilion` (credit-balance), `packy`, `unknown` (stub), `copilot` (OAuth, single-shot internal): `lib/providers/copilot.js`; fetches `/copilot_internal/v2/token`, returns `copilot` field.
 
 ### Settings Discovery
 
@@ -99,7 +100,7 @@ Providers: `anthropic` (OAuth), `zai`, `minimax` (api-key), `openrouter`, `komil
 
 Security: symlinks rejected, apiKeyHelper never executed, files >1MB rejected, settings.local.json excluded, names validated with `/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/`.
 
-Token source pattern for `claude-settings:` sources: `^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
+Token source pattern for `claude-settings:` sources: `^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
 
 ## macOS specifics
 
@@ -165,6 +166,7 @@ Field notes:
 - `balance` — present only for credit-based providers (OpenRouter, Komilion). `total_cents` and `used_cents` are integers; divide by 100 for dollars. Absent (or `null`) for rate-limit-only providers like Anthropic.
 - `code_review` — top-level rate-limit window for Codex code-review feature. `null` for non-Codex providers; `null` on Codex Plus (only present on tiers that have code review enabled). Same shape as `five_hour`/`seven_day`. Added in protocolVersion 3.
 - `secondary` — optional second-provider snapshot, emitted only when `tokenSource: "opencode"` and the OpenCode auth.json contains an OAuth `openai` block. Shape: `{ provider, five_hour, seven_day, code_review, balance }`. `null` for all other tokenSources or when no OpenAI OAuth credentials are present. Added in protocolVersion 4.
+- `copilot` — optional top-level Copilot quota object. `null` for non-github tokenSources. Shape: `{plan: string, premium_interactions: {utilization: number (0-200), used: number, limit: number, resets_at: ISO string, overage_count: number, overage_permitted: bool}}`. Added in protocolVersion 4 (additive, no bump needed).
 - `balance.extras` — provider-specific extension fields. For `komilion`: `{trial_credits_cents: number, is_low_balance: boolean}`. Other providers: absent.
 - `meta.plan`, `meta.tokenSource`, and `meta.fetchedAt` are injected by the server from `config.json` / the current state (not upstream Anthropic fields). `tokenSource` is re-broadcast on every poll and immediately after a `setConfig` mutation so clients can reflect the current selection (used by the macOS menubar for checkmarks).
 - `meta.provider` — active provider name as detected by `lib/providers/index.js` (e.g. `"anthropic"`, `"zai"`, `"openrouter"`). Injected by the server; not an upstream field.
@@ -209,8 +211,8 @@ Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, write
 {"type":"setConfig","key":"displayMode","value":"bar-dots"}
 ```
 
-- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`, `plus` (Codex), `business` (Codex), `edu` (Codex); `tokenSource` → `claude-code`, `opencode`, `codex`; `autoCheckUpdates` → `true`, `false`; `displayMode` → `full`, `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
-- `tokenSource` also accepts `claude-settings:{name}` values matching `^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
+- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`, `plus` (Codex), `business` (Codex), `edu` (Codex); `tokenSource` → `claude-code`, `opencode`, `codex`, `github`; `autoCheckUpdates` → `true`, `false`; `displayMode` → `full`, `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
+- `tokenSource` also accepts `claude-settings:{name}` values matching `^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
 - Server **rejects** any value outside the canonical enum (logs warning, sends `{type:"configError",...}` to the requesting client, config unchanged)
 - For `tokenSource` changes the server invalidates `cachedData`, broadcasts an empty payload to all clients with `meta.tokenSource` set to the new value (so optimistic clients can clear their "Switching…" state immediately), then runs `fetchAndHandleBroadcast({force:true})` to fetch fresh usage. On fetch failure, a second empty broadcast is emitted and the requester gets a `configError` with the failure reason.
 - Do NOT change the raw-broadcast shape without updating both `bin/ai-gauge-waybar` and `macos/AIGauge/Sources/AIGauge/UsageModel.swift` in the same commit.
@@ -220,7 +222,7 @@ Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, write
 Sent only to the WebSocket client that issued the offending `setConfig` command. Lets the menubar abort its optimistic "Switching…" state immediately instead of waiting for the watchdog timeout.
 
 ```json
-{"type":"configError","key":"tokenSource","value":"not a valid src","reason":"invalid tokenSource=not a valid src: must match /^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$/"}
+{"type":"configError","key":"tokenSource","value":"not a valid src","reason":"invalid tokenSource=not a valid src: must match /^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$/"}
 ```
 
 Emitted when:
@@ -386,6 +388,7 @@ Not npm packages — system binaries. None are declared anywhere; if you add a n
 - **Required (Linux)**: `python3` (waybar setup; pre-release validator for `Info.plist` parsing via `plistlib`), `systemctl` (user).
 - **Required (macOS)**: `launchctl`, `plutil`, `codesign`, `sips`, `iconutil`, `lipo` (all built into macOS). Xcode Command Line Tools (for `swift build`) required only when rebuilding the Swift binary locally; users installing the published npm package get the pre-built `bin/AIGauge.app`.
 - **Desktop integration (Linux)**: `notify-send` (libnotify), `wl-copy` (wl-clipboard), `waybar`.
+- **Optional, `tokenSource: github`**: `gh` (GitHub CLI) — required at runtime for Tier 1 credential resolution (`gh auth token --hostname github.com`). Falls back to file-based tiers if absent.
 - **Optional, Omarchy distro**: `omarchy-launch-walker` (menu/settings UI), `omarchy-restart-waybar`. Scripts degrade gracefully when these are missing.
 - **Optional, StreamDock path**: Wine + Fifine Control Deck + StreamDock app. `run.bat` hardcodes `C:\Program Files (x86)\fifine Control Deck\node\node20.exe` and sets `NODE_SKIP_PLATFORM_CHECK=1` — do not change this path, it is the Fifine-bundled Node the plugin host uses.
 
@@ -438,3 +441,4 @@ The pre-push hook lives at `.githooks/pre-push` and is activated by `git config 
 - **`.gitignore` ignores `.sisyphus/`, `node_modules/`, `bun.lock*`** — `bun link` creates `node_modules/.bin/` symlinks during local dev, don't commit them.
 - **`lib/ssrf-guard.js`** — SSRF protection on all user-controlled `baseUrl` fetches. Blocks HTTP, private IP ranges (RFC1918, link-local), and IPv6 loopback. Call it before any `fetch()` that uses a URL from config or a settings file.
 - **`lib/log-safe.js`** — secret masking for daemon logs. Use `logJson()` for structured events; never log raw tokens or credential values. The masker redacts anything matching `TOKEN|KEY|SECRET|CREDENTIAL|AUTH|PASSWORD|PASSPHRASE`.
+- **Hardcoded VS Code Copilot ext headers in `lib/providers/copilot.js`** — FRAGILE, see `codex.js` precedent. Update procedure: bump headers when GitHub deprecates them en masse. Check https://marketplace.visualstudio.com/items?itemName=GitHub.copilot for current version. No automated detection.
