@@ -7,6 +7,8 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.6.1] — 2026-04-28
+
 ### Fixed
 
 - **Waybar module silently disappeared after package upgrades (third occurrence — now structurally fixed)**: `ai-gauge setup` previously wrote bare command names (`"exec": "ai-gauge-waybar"`, `"on-click": "ai-gauge-menu"`) into `~/.config/waybar/config.jsonc`. waybar freezes its `PATH` at start time, so any package-manager upgrade that moved binary symlinks (e.g. `bun add -g` repointing `~/.bun/bin/`, `mise` swapping bun versions, stale symlinks cleaned up) caused waybar to fail silently to find the binary — the module just disappeared. v1.5.3 worked around this for one specific case (post-upgrade restart path), but the underlying config-side fragility remained. v1.6.1 fixes the root cause: `ai-gauge setup` now resolves and writes **absolute paths** for `exec` / `on-click` / `on-click-right`. On existing installs, the next `ai-gauge setup` migrates the legacy bare-name (or stale-absolute-path) config in place — no manual config editing required. Patcher logic extracted to `lib/patch-waybar-config.py` with full test coverage (`test/patch-waybar-config.test.js`, 8 cases including legacy migration, stale-absolute migration, noop, env-var validation, comment preservation).
