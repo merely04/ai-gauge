@@ -206,6 +206,19 @@ cmd_setup_linux() {
     SERVER_PATH=$(resolve_path "$SERVER_PATH")
     echo "  Found ai-gauge-server at $SERVER_PATH"
 
+    # Resolve absolute paths for waybar exec/on-click. waybar freezes PATH at
+    # start time, so bare command names break silently on bun/pnpm/mise
+    # upgrades that move binary symlinks.
+    local WAYBAR_BIN_PATH
+    WAYBAR_BIN_PATH=$(command -v ai-gauge-waybar 2>/dev/null || true)
+    [[ -z "$WAYBAR_BIN_PATH" ]] && WAYBAR_BIN_PATH="$BIN_DIR/ai-gauge-waybar"
+    WAYBAR_BIN_PATH=$(resolve_path "$WAYBAR_BIN_PATH")
+
+    local MENU_BIN_PATH
+    MENU_BIN_PATH=$(command -v ai-gauge-menu 2>/dev/null || true)
+    [[ -z "$MENU_BIN_PATH" ]] && MENU_BIN_PATH="$BIN_DIR/ai-gauge-menu"
+    MENU_BIN_PATH=$(resolve_path "$MENU_BIN_PATH")
+
     # Install systemd service
     local SYSTEMD_DIR="$HOME/.config/systemd/user"
     local SERVICE_SRC="$LIB_DIR/ai-gauge-server.service"
@@ -265,42 +278,21 @@ cmd_setup_linux() {
     }
 
     _patch_waybar_config() {
-        if [[ -f "$WAYBAR_CONFIG" ]] && ! grep -q '"custom/ai-gauge"' "$WAYBAR_CONFIG"; then
-            python3 -c "
-import sys
-
-path = sys.argv[1]
-with open(path) as f:
-    text = f.read()
-
-text = text.replace(
-    '\"custom/notification-silencing-indicator\"],',
-    '\"custom/notification-silencing-indicator\", \"custom/ai-gauge\"],',
-    1
-)
-
-module_def = '''  \"custom/ai-gauge\": {
-    \"exec\": \"ai-gauge-waybar\",
-    \"return-type\": \"json\",
-    \"format\": \"{}\",
-    \"tooltip\": true,
-    \"on-click\": \"ai-gauge-menu\",
-    \"on-click-right\": \"ai-gauge-menu\"
-  }'''
-
-last_brace = text.rfind('}')
-before = text[:last_brace].rstrip()
-if not before.endswith(','):
-    before += ','
-text = before + '\n' + module_def + '\n' + text[last_brace:]
-
-with open(path, 'w') as f:
-    f.write(text)
-" "$WAYBAR_CONFIG"
-            echo "  Patched waybar config.jsonc"
-        else
-            echo "  Config already patched (skipped)"
+        if [[ ! -f "$WAYBAR_CONFIG" ]]; then
+            return
         fi
+        local action
+        action=$(
+            AI_GAUGE_WAYBAR_BIN="$WAYBAR_BIN_PATH" \
+            AI_GAUGE_MENU_BIN="$MENU_BIN_PATH" \
+            python3 "$LIB_DIR/patch-waybar-config.py" "$WAYBAR_CONFIG"
+        )
+        case "$action" in
+            inserted) echo "  Patched waybar config.jsonc (added module, exec=$WAYBAR_BIN_PATH)" ;;
+            migrated) echo "  Patched waybar config.jsonc (migrated paths to $WAYBAR_BIN_PATH)" ;;
+            noop)     echo "  Waybar config.jsonc already up-to-date (exec=$WAYBAR_BIN_PATH)" ;;
+            *)        echo "  Waybar config.jsonc patched (status: ${action:-unknown})" ;;
+        esac
     }
 
     _patch_waybar_css() {
