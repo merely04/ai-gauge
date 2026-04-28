@@ -148,7 +148,7 @@ async function detectClaudeVersion() {
 
 async function writeUsageAtomic(data) {
   await atomicWriteJSON(`${STATE_DIR}/usage.json`, data, {
-    validate: (parsed) => !!(parsed?.five_hour || parsed?.balance),
+    validate: (parsed) => !!(parsed?.five_hour || parsed?.balance || parsed?.copilot),
   });
   await Bun.write(`${STATE_DIR}/last_fetch`, String(Math.floor(Date.now() / 1000)));
 }
@@ -175,6 +175,23 @@ const thresholdNotifier = createThresholdNotifier({
   systemNotify,
   formatDuration,
   formatDaysRemaining,
+});
+
+const copilotThresholdNotifier = createThresholdNotifier({
+  broadcast,
+  systemNotify,
+  formatDuration,
+  formatDaysRemaining,
+  extractor: (d) => {
+    const pi = d?.copilot?.premium_interactions;
+    if (!pi) return null;
+    return {
+      utilization: pi.utilization,
+      resets_at: pi.resets_at,
+      daysResetAt: pi.resets_at,
+    };
+  },
+  messagePrefix: 'Copilot premium',
 });
 
 const updateLifecycle = createUpdateLifecycle({
@@ -304,6 +321,7 @@ async function fetchUsage(creds, config, { generation, signal, _retriedAfterAuth
     cachedData = {
       ...(parsed.rateLimits ?? {}),
       balance: parsed.balance ?? null,
+      copilot: parsed.copilot ?? null,
       secondary,
       meta: buildMeta(effectiveConfig, {
         subscriptionType: creds.subscriptionType,
@@ -408,6 +426,7 @@ function buildEmptyBroadcast(config, provider) {
     seven_day_cowork: null,
     seven_day_omelette: null,
     balance: null,
+    copilot: null,
     secondary: null,
     meta: buildMeta(config, { provider: provider ?? 'unknown' }),
   };
@@ -435,6 +454,7 @@ async function fetchAndHandleBroadcast({ force = false } = {}) {
       currentInterval = POLL_INTERVAL;
       broadcast(cachedData);
       await thresholdNotifier.check(cachedData);
+      await copilotThresholdNotifier.check(cachedData);
     } else {
       currentInterval = BACKOFF_INTERVAL;
       if (cachedData) {
@@ -466,6 +486,7 @@ async function refreshNow() {
     await writeUsageAtomic(cachedData);
     broadcast(cachedData);
     await thresholdNotifier.check(cachedData);
+    await copilotThresholdNotifier.check(cachedData);
   }
 }
 
