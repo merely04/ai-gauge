@@ -18,7 +18,7 @@ final class UsageModel: ObservableObject {
     static let SUPPORTED_PROTOCOL_VERSION = 4
 
     /// Keep in sync with `lib/config.js:TOKEN_SOURCE_PATTERN`.
-    nonisolated static let TOKEN_SOURCE_PATTERN = #"^(claude-code|opencode|codex|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$"#
+    nonisolated static let TOKEN_SOURCE_PATTERN = #"^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$"#
 
     nonisolated static func isValidTokenSource(_ value: String) -> Bool {
         guard let regex = try? NSRegularExpression(pattern: TOKEN_SOURCE_PATTERN) else { return false }
