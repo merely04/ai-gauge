@@ -15,6 +15,8 @@ Before proceeding, verify:
   - OpenCode authenticated with Anthropic (`~/.local/share/opencode/auth.json` with `anthropic.access`)
   - Codex CLI authenticated (`~/.codex/auth.json` with `tokens.access_token` + `tokens.account_id`)
   - Custom Anthropic-compatible provider via `~/.claude/settings.<name>.json` (Z.ai, MiniMax, OpenRouter, Komilion, Packy)
+  - GitHub Copilot (`tokenSource: github`) — requires `gh` CLI authenticated via `gh auth login`
+- **`gh`** (GitHub CLI) — optional, required only for `tokenSource: github`. Without it, copy a `gho_*` OAuth token to `~/.config/ai-gauge/copilot-token` manually. Install: https://cli.github.com/
 
 ### macOS
 
@@ -23,6 +25,7 @@ Before proceeding, verify:
 - `bun` is installed — via [bun.sh](https://bun.sh) (`curl -fsSL https://bun.sh/install | bash`) or Homebrew (`brew install bun`)
 - `jq` is available — `brew install jq` or `sudo port install jq`
 - An OAuth token source is available — same options as Linux above (on macOS, Claude Code CLI v2.0.14+ stores credentials in **Keychain** under service `Claude Code-credentials`; ai-gauge reads them via `/usr/bin/security` automatically and falls back to the legacy `~/.claude/.credentials.json` path for SSH/headless sessions)
+- **`gh`** (GitHub CLI) — optional, required only for `tokenSource: github`. Install: `brew install gh`. Without it, copy a `gho_*` OAuth token to `~/.config/ai-gauge/copilot-token` manually.
 
 ## Install (npm package — only supported install path)
 
@@ -64,6 +67,22 @@ ai-gauge-config set plan max                  # max | pro | team | enterprise | 
 | `claude-settings:<name>` | `~/.claude/settings.<name>.json` with `env.ANTHROPIC_BASE_URL` + `env.ANTHROPIC_AUTH_TOKEN` | Custom Anthropic-compatible provider (Z.ai, MiniMax, OpenRouter, Komilion). Plain `sk-ant-*` API keys cannot fetch usage — only OAuth-bearing providers work |
 
 The server restarts automatically after `ai-gauge-config set`.
+
+## GitHub Copilot setup
+
+```bash
+# Authenticate with gh CLI (any storage mode works — Keychain, Secret Service, or plaintext)
+gh auth login
+
+# Configure ai-gauge to use Copilot credentials
+ai-gauge-config set tokenSource github
+
+# Restart the daemon
+systemctl --user restart ai-gauge-server       # Linux
+# macOS: launchctl kickstart -k gui/$(id -u)/com.ai-gauge.server
+```
+
+**Headless / CI mode**: If running without the `gh` binary, copy a `gho_*` OAuth token (NOT `ghp_*` classic PAT — it won't work) to `~/.config/ai-gauge/copilot-token` (single line plain text).
 
 ## Uninstall
 
