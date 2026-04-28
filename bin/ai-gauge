@@ -296,10 +296,17 @@ cmd_setup_linux() {
             return 1
         fi
         python3 -c 'import dbus; from gi.repository import GLib' 2>/dev/null || return 1
+        # Probe both watcher names — the runtime helper registers under whichever
+        # is present (org.kde.* on KDE Plasma, org.freedesktop.* on some other
+        # tray hosts). Detecting only org.kde.* would falsely skip install on
+        # supported DEs that ship just the freedesktop watcher.
         gdbus introspect --session \
             --dest org.kde.StatusNotifierWatcher \
-            --object-path /StatusNotifierWatcher 2>/dev/null > /dev/null || return 1
-        return 0
+            --object-path /StatusNotifierWatcher 2>/dev/null > /dev/null && return 0
+        gdbus introspect --session \
+            --dest org.freedesktop.StatusNotifierWatcher \
+            --object-path /StatusNotifierWatcher 2>/dev/null > /dev/null && return 0
+        return 1
     }
 
     _install_sni_icons() {
