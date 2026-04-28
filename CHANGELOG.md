@@ -7,6 +7,8 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-04-28
+
 ### Added
 
 - **GitHub Copilot provider** — monitors monthly premium-request quota for Individual plans (Free, Pro, Pro+). Three-tier auth resolution: (1) `gh auth token --hostname github.com` shell-out works for any gh storage backend (Keychain on macOS, Secret Service on Linux, `--insecure-storage` plaintext), (2) `~/.config/gh/hosts.yml` plaintext fallback when the `gh` binary is unavailable, (3) `~/.config/ai-gauge/copilot-token` file for headless/CI environments (must contain a `gho_*` OAuth token; classic `ghp_*` PATs and fine-grained `github_pat_*` tokens are rejected — they don't authenticate the internal Copilot API). Single-shot endpoint `/copilot_internal/v2/token`. New `tokenSource: github` config value. New top-level `copilot` field in the WS broadcast (shape: `{plan, premium_interactions: {utilization, used, limit, resets_at, overage_count, overage_permitted}}`; protocolVersion stays at 4 — additive field). Threshold notifications at 80%/95% extended to Copilot utilization.
