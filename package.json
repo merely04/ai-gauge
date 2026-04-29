@@ -12,6 +12,7 @@
     "ai-gauge": "bin/ai-gauge",
     "ai-gauge-server": "bin/ai-gauge-server",
     "ai-gauge-waybar": "bin/ai-gauge-waybar",
+    "ai-gauge-tray": "bin/ai-gauge-tray",
     "ai-gauge-menu": "bin/ai-gauge-menu",
     "ai-gauge-config": "bin/ai-gauge-config"
   },
@@ -26,7 +27,9 @@
     "CHANGELOG.md",
     "docs/",
     "!**/*.test.js",
-    "!test/"
+    "!test/",
+    "!**/__pycache__/**",
+    "!**/*.pyc"
   ],
   "scripts": {
     "test": "bun test",
@@ -45,6 +48,10 @@
     "hyprland",
     "sway",
     "wayland",
+    "kde",
+    "plasma",
+    "sni",
+    "system-tray",
     "monitoring",
     "usage-tracking",
     "developer-tools",

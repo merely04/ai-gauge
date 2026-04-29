@@ -10,6 +10,10 @@ Before proceeding, verify:
 - Linux with waybar (Hyprland/Sway/etc.)
 - `bash`, `jq` are available
 - `bun` is installed ([bun.sh](https://bun.sh))
+- **For SNI tray (KDE Plasma / non-Waybar desktops)** — `python3-dbus` and `python3-gi` (PyGObject). Pre-installed on Plasma 6 / KDE Neon / Kubuntu / Fedora KDE. Install if missing:
+  - Debian/Ubuntu: `sudo apt install python3-dbus python3-gi`
+  - Fedora: `sudo dnf install python3-dbus python3-gobject`
+  - Arch: `sudo pacman -S python-dbus python-gobject`
 - An OAuth token source is available — one of:
   - Claude Code CLI authenticated via OAuth (`~/.claude/.credentials.json` with `claudeAiOauth.accessToken`)
   - OpenCode authenticated with Anthropic (`~/.local/share/opencode/auth.json` with `anthropic.access`)
@@ -44,6 +48,7 @@ On **Linux**, `ai-gauge setup`:
 5. Adds `"custom/ai-gauge"` to `modules-center` in `~/.config/waybar/config.jsonc`
 6. Adds CSS styling to `~/.config/waybar/style.css`
 7. Restarts waybar
+8. Detects SNI tray availability (`gdbus` + `python3-dbus` + `python3-gi` + SNI watcher on D-Bus) and installs the `ai-gauge-tray.service` systemd user unit + 6 SVG icons to `~/.local/share/icons/hicolor/scalable/apps/` if all present. Skipped cleanly otherwise.
 
 If the user's waybar config does not have `modules-center` or uses a different module layout, you may need to manually adjust placement in `config.jsonc` after install.
 
@@ -114,6 +119,31 @@ Common issues an LLM agent might encounter:
 - **Service starts but no data, log shows `token_expired`** — check `journalctl --user -u ai-gauge-server -n 5`. The source CLI needs to refresh it (open Claude Code or OpenCode). Note: `fetchUsage` automatically retries once on HTTP 401/403 by re-reading credentials, so this only persists when the source CLI itself has not refreshed the token.
 - **Waybar shows `✦ ···` permanently** — server has no data to send. Check service status and token validity.
 - **Module not visible in waybar** — config.jsonc may not have `modules-center`. Add `"custom/ai-gauge"` to whichever module array is used.
+
+## SNI Tray (KDE Plasma / non-Waybar Linux)
+
+`ai-gauge-tray` runs as a systemd user service alongside `ai-gauge-server`. It connects to the same WebSocket broadcast and shows usage in the system tray on KDE Plasma 6, Cinnamon, XFCE, MATE, Budgie, and any other desktop with an SNI watcher.
+
+**Verify the service is running:**
+
+```bash
+systemctl --user status ai-gauge-tray
+journalctl --user -u ai-gauge-tray -n 30 --no-pager
+```
+
+**Disable the tray** (preserves config):
+
+```bash
+systemctl --user disable --now ai-gauge-tray
+```
+
+**Re-enable the tray:**
+
+```bash
+systemctl --user enable --now ai-gauge-tray
+```
+
+If the tray icon never appears, check that your desktop has an SNI watcher running. GNOME without the AppIndicator/KStatusNotifier extension does not have one — the service will start but the icon won't be visible.
 
 ---
 

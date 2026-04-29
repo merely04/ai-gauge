@@ -1,0 +1,386 @@
+#!/usr/bin/env bun
+
+import { computeIconName, computeMenuItems, computeStatus, computeTooltip } from '../lib/tray-menu.js';
+import { logJson, sanitizeError } from '../lib/log-safe.js';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Override helper spawn command in tests/dev.
+const HELPER_CMD_OVERRIDE = Bun.env.AIGAUGE_TRAY_HELPER_CMD;
+// Override websocket reconnect delay in ms.
+const RECONNECT_DELAY = Number(Bun.env.AIGAUGE_TRAY_RECONNECT_DELAY_MS) || 5_000;
+// Override helper restart backoff initial delay in ms.
+const HELPER_RESTART_INITIAL_DELAY = Number(Bun.env.AIGAUGE_TRAY_HELPER_RESTART_INITIAL_DELAY_MS) || 1_000;
+const WS_URL = Bun.env.AIGAUGE_WS_URL || 'ws://localhost:19876';
+const HELPER_RESTART_MAX_DELAY = 30_000;
+const HELPER_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'sni-tray', 'sni-helper.py');
+// Resolve sibling absolute path: systemd freezes PATH at unit start, so a bare
+// 'ai-gauge-config' name may fail to find the binary after a bun/pnpm/mise
+// upgrade that moves global symlinks. Same lesson as ai-gauge-waybar.
+const CONFIG_BIN_PATH = resolve(dirname(fileURLToPath(import.meta.url)), 'ai-gauge-config');
+
+let lastUsageCache = null;
+let lastUpdateState = emptyUpdateState();
+let lastConfig = { tokenSource: 'claude-code', plan: 'unknown', displayMode: 'full', autoCheckUpdates: true };
+let lastSettingsFiles = [];
+let helperProc = null;
+let helperRestartDelay = HELPER_RESTART_INITIAL_DELAY;
+let helperWatcherFails = 0;
+let helperShutdownRequested = false;
+let exiting = false;
+let ws = null;
+let lastSentIcon = null;
+let lastSentStatus = null;
+let lastSentTooltip = null;
+let lastSentMenuHash = null;
+
+function emptyUpdateState() {
+  return {
+    available: false,
+    version: null,
+    installing: false,
+    error: null,
+    changelogUrl: null,
+  };
+}
+
+function helperCommand() {
+if (HELPER_CMD_OVERRIDE) return HELPER_CMD_OVERRIDE.trim().split(/\s+/);
+// Spawn via python3 explicitly. The helper file ships as a regular .py
+// (no executable bit) — direct spawn would raise EACCES on POSIX.
+return ['python3', HELPER_PATH];
+}
+
+function sendWs(payload) {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+}
+
+function sendCmd(payload) {
+  if (!helperProc?.stdin || helperShutdownRequested) return false;
+  helperProc.stdin.write(`${JSON.stringify(payload)}\n`);
+  return true;
+}
+
+function updateConfigFromMeta(meta) {
+  if (!meta || typeof meta !== 'object') return;
+  lastConfig = {
+    tokenSource: meta.tokenSource ?? lastConfig.tokenSource,
+    plan: meta.plan ?? lastConfig.plan,
+    displayMode: meta.displayMode ?? lastConfig.displayMode,
+    autoCheckUpdates: meta.autoCheckUpdates ?? lastConfig.autoCheckUpdates,
+  };
+}
+
+function flushHelper() {
+  if (!helperProc || helperShutdownRequested) return;
+  const now = Date.now();
+  const iconName = computeIconName({ data: lastUsageCache, updateState: lastUpdateState });
+  const status = computeStatus({ data: lastUsageCache, updateState: lastUpdateState });
+  const tooltip = computeTooltip({ data: lastUsageCache, updateState: lastUpdateState, now });
+  const menuItems = computeMenuItems({
+    data: lastUsageCache,
+    updateState: lastUpdateState,
+    config: lastConfig,
+    settingsFiles: lastSettingsFiles,
+    now,
+  });
+  const menuHash = JSON.stringify(menuItems);
+
+  if (iconName !== lastSentIcon) {
+    sendCmd({ cmd: 'set-icon', name: iconName });
+    lastSentIcon = iconName;
+  }
+  if (status !== lastSentStatus) {
+    sendCmd({ cmd: 'set-status', value: status });
+    lastSentStatus = status;
+  }
+  if (!lastSentTooltip || lastSentTooltip.title !== tooltip.title || lastSentTooltip.body !== tooltip.body) {
+    sendCmd({ cmd: 'set-tooltip', title: tooltip.title, body: tooltip.body });
+    lastSentTooltip = tooltip;
+  }
+  if (menuHash !== lastSentMenuHash) {
+    sendCmd({ cmd: 'set-menu', items: menuItems });
+    lastSentMenuHash = menuHash;
+  }
+}
+
+async function copyToClipboard(text) {
+  for (const args of [['wl-copy'], ['xclip', '-selection', 'clipboard']]) {
+    const proc = Bun.spawn(args, { stdin: 'pipe', stdout: 'ignore', stderr: 'ignore' });
+    proc.stdin.write(text);
+    proc.stdin.end();
+    const code = await proc.exited;
+    if (code === 0) return true;
+  }
+  logJson(console.error, 'tray-clipboard-failed', {});
+  return false;
+}
+
+async function shutdownHelper() {
+  const proc = helperProc;
+  if (!proc) return;
+  sendCmd({ cmd: 'shutdown' });
+  helperShutdownRequested = true;
+  await Promise.race([
+    proc.exited,
+    new Promise((resolve) => setTimeout(resolve, 2_000)),
+  ]);
+  try {
+    proc.kill('SIGKILL');
+    await proc.exited;
+  } catch {}
+  helperProc = null;
+}
+
+async function shutdownAndExit(code) {
+  if (exiting) return;
+  exiting = true;
+  try { ws?.close(); } catch {}
+  await shutdownHelper();
+  process.exit(code);
+}
+
+async function handleEvent(event) {
+  switch (event.event) {
+    case 'activate':
+      Bun.spawn([CONFIG_BIN_PATH], { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' });
+      break;
+    case 'secondary-activate':
+    case 'context-menu':
+    case 'test-echo':
+      break;
+    case 'menu-about-to-show':
+      if (event.id === 'set-token-source') sendWs({ type: 'listSettingsFiles' });
+      break;
+    case 'menu-click':
+      await handleMenuClick(event.id);
+      break;
+    case 'watcher-unavailable':
+      helperWatcherFails += 1;
+      logJson(console.error, 'tray-watcher-unavailable', { attempt: helperWatcherFails, reason: event.reason || null });
+      if (helperWatcherFails >= 5) {
+        await shutdownAndExit(0);
+        return;
+      }
+      break;
+    case 'helper-error':
+      if (event.reason === 'dbus-import-failed') {
+        logJson(console.error, 'tray-helper-fatal', { reason: event.reason, message: event.message || null });
+        await shutdownAndExit(3);
+        return;
+      }
+      logJson(console.error, 'tray-helper-error', { reason: event.reason, message: event.message || null });
+      break;
+    default:
+      logJson(console.error, 'tray-helper-unknown-event', { event });
+  }
+}
+
+async function handleMenuClick(id) {
+  if (id === 'refresh-now') return sendWs({ type: 'refresh' });
+  if (id === 'restart-server') {
+    Bun.spawn(['systemctl', '--user', 'restart', 'ai-gauge-server'], { stdin: 'ignore', stdout: 'ignore', stderr: 'inherit' });
+    return;
+  }
+  if (id === 'copy-summary') {
+    const tooltip = computeTooltip({ data: lastUsageCache, updateState: lastUpdateState, now: Date.now() });
+    await copyToClipboard(tooltip.body);
+    return;
+  }
+  if (id === 'copy-raw') {
+    await copyToClipboard(JSON.stringify(lastUsageCache, null, 2));
+    return;
+  }
+  if (id === 'open-settings') {
+    Bun.spawn([CONFIG_BIN_PATH], { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' });
+    return;
+  }
+  if (id === 'quit') {
+    await shutdownAndExit(0);
+    return;
+  }
+  if (id === 'check-update') return sendWs({ type: 'checkUpdate' });
+  if (id === 'install-update') return sendWs({ type: 'doUpdate' });
+  if (id === 'view-changelog') {
+    if (lastUpdateState.changelogUrl) {
+      Bun.spawn(['xdg-open', lastUpdateState.changelogUrl], { stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' });
+    }
+    return;
+  }
+  if (id === 'dismiss-update') return sendWs({ type: 'dismissUpdate', version: lastUpdateState.version });
+  if (id === 'toggle-auto-check-updates') {
+    return sendWs({ type: 'setConfig', key: 'autoCheckUpdates', value: !lastConfig.autoCheckUpdates });
+  }
+  if (typeof id === 'string' && id.startsWith('set-token-source:')) {
+    return sendWs({ type: 'setConfig', key: 'tokenSource', value: id.slice('set-token-source:'.length) });
+  }
+  if (typeof id === 'string' && id.startsWith('set-plan:')) {
+    return sendWs({ type: 'setConfig', key: 'plan', value: id.slice('set-plan:'.length) });
+  }
+  if (typeof id === 'string' && id.startsWith('set-display-mode:')) {
+    return sendWs({ type: 'setConfig', key: 'displayMode', value: id.slice('set-display-mode:'.length) });
+  }
+  logJson(console.error, 'tray-menu-unknown-click', { id });
+}
+
+function readHelperStdout(proc) {
+  const decoder = new TextDecoder();
+  (async () => {
+    const reader = proc.stdout.getReader();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex = buffer.indexOf('\n');
+      while (newlineIndex !== -1) {
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (line) {
+          try {
+            await handleEvent(JSON.parse(line));
+          } catch (error) {
+            logJson(console.error, 'tray-helper-parse-error', { line, error: sanitizeError(error) });
+          }
+        }
+        newlineIndex = buffer.indexOf('\n');
+      }
+    }
+    buffer += decoder.decode();
+    const tail = buffer.trim();
+    if (tail) {
+      try {
+        await handleEvent(JSON.parse(tail));
+      } catch (error) {
+        logJson(console.error, 'tray-helper-parse-error', { line: tail, error: sanitizeError(error) });
+      }
+    }
+  })().catch((error) => {
+    logJson(console.error, 'tray-helper-stdout-failed', { error: sanitizeError(error) });
+  });
+}
+
+function spawnHelper() {
+  if (exiting || helperProc || helperWatcherFails >= 5) return;
+  helperShutdownRequested = false;
+  const proc = Bun.spawn(helperCommand(), {
+    env: process.env,
+    stdin: 'pipe',
+    stdout: 'pipe',
+    stderr: 'inherit',
+  });
+  helperProc = proc;
+  // Reset diff-cache so the new helper instance receives a full state snapshot.
+  // Without this, after a helper crash + respawn the new process stays in the
+  // default empty state (waiting icon, blank menu) until the next broadcast
+  // changes something.
+  lastSentIcon = null;
+  lastSentStatus = null;
+  lastSentTooltip = null;
+  lastSentMenuHash = null;
+  readHelperStdout(proc);
+  sendCmd({ cmd: 'init', title: 'AI Gauge', category: 'ApplicationStatus', id: 'ai-gauge' });
+  flushHelper();
+  proc.exited.then((code) => {
+    if (helperProc === proc) helperProc = null;
+    if (exiting || helperShutdownRequested) return;
+    // Watcher-unavailable path: helper exits 2 after emitting the event. Use
+    // the slow 60s retry instead of the generic crash backoff to honor the
+    // "5 attempts, 60s apart" contract from IPC.md without two competing
+    // timers (one from the event handler, one here).
+    if (code === 2) {
+      logJson(console.error, 'tray-helper-exited', { code, retry: 'watcher-60s' });
+      setTimeout(spawnHelper, 60_000);
+      return;
+    }
+    logJson(console.error, 'tray-helper-exited', { code, restartDelay: helperRestartDelay });
+    const delay = helperRestartDelay;
+    setTimeout(spawnHelper, delay);
+    helperRestartDelay = Math.min(helperRestartDelay * 2, HELPER_RESTART_MAX_DELAY);
+  });
+}
+
+function handleTypedMessage(data) {
+  switch (data.type) {
+    case 'notify':
+      logJson(console.error, 'tray-notify-ignored', { threshold: data.threshold ?? null, percentage: data.percentage ?? null });
+      break;
+    case 'updateAvailable':
+      lastUpdateState = {
+        available: true,
+        version: data.latestVersion,
+        installing: false,
+        error: null,
+        changelogUrl: data.changelogUrl || null,
+      };
+      flushHelper();
+      break;
+    case 'updateInstalling':
+      lastUpdateState = { ...lastUpdateState, installing: true, error: null };
+      flushHelper();
+      break;
+    case 'updateFailed':
+      lastUpdateState = { ...lastUpdateState, installing: false, error: data.reason || null };
+      flushHelper();
+      break;
+    case 'updateComplete':
+      lastUpdateState = emptyUpdateState();
+      flushHelper();
+      break;
+    case 'settingsFiles':
+      lastSettingsFiles = Array.isArray(data.files) ? data.files : [];
+      flushHelper();
+      break;
+    case 'configError':
+      logJson(console.error, 'tray-config-error', { key: data.key || null, value: data.value ?? null, reason: data.reason || null });
+      flushHelper();
+      break;
+    case 'updateCheckFailed':
+    case 'updateAlreadyInProgress':
+      logJson(console.error, 'tray-typed-ignored', { type: data.type, reason: data.reason || null });
+      break;
+    default:
+      logJson(console.error, 'tray-typed-unknown', { type: data.type || null });
+  }
+}
+
+function connectWS() {
+  let closed = false;
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    sendWs({ type: 'listSettingsFiles' });
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const payload = typeof event.data === 'string' ? event.data : String(event.data);
+      const data = JSON.parse(payload);
+      if (data && typeof data.type === 'string') {
+        handleTypedMessage(data);
+      } else {
+        lastUsageCache = data;
+        updateConfigFromMeta(data.meta);
+        flushHelper();
+      }
+    } catch (error) {
+      logJson(console.error, 'tray-ws-parse-error', { error: sanitizeError(error) });
+    }
+  };
+
+  ws.onerror = () => {};
+
+  ws.onclose = () => {
+    if (closed || exiting) return;
+    closed = true;
+    ws = null;
+    lastUsageCache = null;
+    lastUpdateState = emptyUpdateState();
+    flushHelper();
+    setTimeout(connectWS, RECONNECT_DELAY);
+  };
+}
+
+spawnHelper();
+connectWS();
+setInterval(() => {}, 60_000);

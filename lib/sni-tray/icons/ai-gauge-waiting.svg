@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-linecap="round">
+  <!-- entire gauge dimmed: WS disconnected, no data -->
+  <g opacity="0.4">
+    <!-- gauge track only, no urgency fill -->
+    <path d="M5 14A7 7 0 0 1 19 14" stroke="#888888" stroke-width="2.4"/>
+    <!-- faint vertical needle in neutral position -->
+    <line x1="12" y1="14" x2="12" y2="9" stroke="#888888" stroke-width="1.2"/>
+    <!-- solid grey hub (no contrast accent — entire icon greyed) -->
+    <circle cx="12" cy="14" r="1.4" fill="#888888"/>
+  </g>
+</svg>

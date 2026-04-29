@@ -4,8 +4,9 @@ Compact guide for AI agents working in this repo. For user-facing docs see `READ
 
 ## Stack (unusual, read this first)
 
-- **Runtime: Bun (not Node)** — `bin/ai-gauge-server` and `bin/ai-gauge-waybar` use `#!/usr/bin/env bun` and Bun-native APIs (`Bun.file`, `Bun.serve`, `Bun.spawn`). Do not rewrite as Node/ESM.
+- **Runtime: Bun (not Node)** — `bin/ai-gauge-server`, `bin/ai-gauge-waybar`, and `bin/ai-gauge-tray` use `#!/usr/bin/env bun` and Bun-native APIs (`Bun.file`, `Bun.serve`, `Bun.spawn`). Do not rewrite as Node/ESM.
 - **Three bash scripts** (`bin/ai-gauge`, `bin/ai-gauge-config`, `bin/ai-gauge-menu`) — all start with `set -euo pipefail`. Respect that when editing.
+- **SNI tray Python helper** (`lib/sni-tray/sni-helper.py`) — spawned by `bin/ai-gauge-tray` as a child process. Requires `python3` + `dbus-python` + `PyGObject` (`python3-gi`) — system packages, NOT pip. Pre-installed on Plasma 6 / KDE Neon / Kubuntu / Fedora KDE. `dasbus` support deferred to v1.1; v1 uses `dbus-python` only.
 - **Plain JavaScript, no TypeScript.** No `tsconfig.json`, no build step, no bundler.
 - **Zero npm runtime deps.** `package.json` has no `dependencies`/`devDependencies`. The WebSocket server and client are hand-rolled. Do not add a dep without discussing.
 - **Linux + macOS**: `"os": ["linux", "darwin"]` in `package.json`. Linux assumes systemd user services, `$XDG_RUNTIME_DIR`, wl-copy, notify-send. macOS uses launchd LaunchAgents, `$TMPDIR`, and a native Swift menubar app.
@@ -13,13 +14,14 @@ Compact guide for AI agents working in this repo. For user-facing docs see `READ
 
 ## Commands — there are no `npm run` targets
 
-There is no test/lint/build. Interact via the five bin entries directly:
+There is no test/lint/build. Interact via the six bin entries directly:
 
 | Command | Language | Role |
 |---|---|---|
 | `bin/ai-gauge` | bash | User-facing CLI: `setup` / `uninstall` / `status` / `version` |
 | `bin/ai-gauge-server` | Bun | WebSocket daemon on `ws://localhost:19876`; polls Anthropic `/api/oauth/usage` |
 | `bin/ai-gauge-waybar` | Bun | Thin WS client — emits waybar JSON to stdout (Linux) |
+| `bin/ai-gauge-tray` | Bun | WS client → spawns Python helper → SNI/DBusMenu D-Bus on KDE Plasma 6 + non-Waybar Linux. No-op on macOS. |
 | `bin/ai-gauge-menubar` | Swift (binary) | Native macOS MenuBarExtra app — universal arm64+x86_64 (macOS) |
 | `bin/ai-gauge-menu` | bash | Linux: right-click menu (`omarchy-launch-walker` + `wl-copy` + `notify-send`). macOS: prints guidance — menu lives in the Swift app instead. |
 | `bin/ai-gauge-config` | bash | Settings CLI (`set <key> <value>`) / walker UI on Linux. On macOS prints guidance — settings are mutated via Swift menubar → server setConfig. Writes `~/.config/ai-gauge/config.json`. |
@@ -40,6 +42,8 @@ One Bun server, many clients. Everything talks over **hardcoded** `ws://localhos
 ```
 bin/ai-gauge-server (systemd --user, polls api.anthropic.com every 60s)
   ├── ws://localhost:19876 ──► bin/ai-gauge-waybar        (waybar module)
+  ├── ws://localhost:19876 ──► bin/ai-gauge-tray          (Linux SNI tray, KDE/etc.)
+  │                              └── lib/sni-tray/sni-helper.py
   ├── ws://localhost:19876 ──► lib/streamdock-plugin/...  (Fifine D6 via Wine)
   └── writes $XDG_RUNTIME_DIR/ai-gauge/usage.json         (consumed by bin/ai-gauge-menu via jq)
 ```
@@ -134,6 +138,34 @@ launchctl list | grep ai-gauge                                               # s
 - Runtime state: `$TMPDIR/ai-gauge/usage.json` (vs `$XDG_RUNTIME_DIR` on Linux)
 - Logs: `~/Library/Logs/ai-gauge/` (server and menubar app write here)
 - LaunchAgent plists installed to: `~/Library/LaunchAgents/`
+
+## SNI Tray (Linux KDE Plasma 6, etc.)
+
+`bin/ai-gauge-tray` is a Bun WebSocket client that connects to `ws://localhost:19876`, receives the same broadcast as Waybar, and spawns `lib/sni-tray/sni-helper.py` as a child process. The Python helper hosts two D-Bus services — `org.kde.StatusNotifierItem` and `com.canonical.dbusmenu` — making the tray icon visible in KDE Plasma 6, Cinnamon, XFCE, MATE, Budgie, and any other desktop with an SNI watcher. Communication between the Bun client and the Python helper uses a line-delimited JSON IPC protocol documented in `lib/sni-tray/IPC.md`.
+
+**Critical constants:**
+
+- Helper bus name: `org.kde.StatusNotifierItem-{PID}-1`
+- Object paths: `/StatusNotifierItem` + `/MenuBar`
+- Icon names: `ai-gauge-normal`, `ai-gauge-waiting`, `ai-gauge-warning`, `ai-gauge-critical`, `ai-gauge-update-available`, `ai-gauge-updating`
+- Menu IDs (FROZEN — do not renumber): `0` root, `1` usage header, `10` refresh, `11` restart-server, `20` plan submenu, `21`–`26` plan items, `30` token-source submenu, `31`–`36` token-source items, `40` display-mode submenu, `41`–`45` display-mode items, `50` quit
+
+**Test / override env vars:**
+
+- `AIGAUGE_SNI_TEST_MODE=1` — short-circuits Python helper to echo loop (skips D-Bus imports); allows tests on macOS
+- `AIGAUGE_SNI_LIVE_TESTS=1` — opt-in for live D-Bus tests (deferred — no live test file shipped in v1)
+- `AIGAUGE_TRAY_HELPER_CMD=<cmd>` — overrides spawn command (test injection)
+- `AIGAUGE_TRAY_RECONNECT_DELAY_MS=<ms>` — overrides WS reconnect delay
+- `AIGAUGE_TRAY_HELPER_RESTART_INITIAL_DELAY_MS=<ms>` — overrides helper restart backoff
+- `AIGAUGE_TEST_FORCE_NO_SNI=1` — forces SNI detection to fail during `ai-gauge setup` (test override)
+- `AIGAUGE_UNINSTALL_PLATFORM=linux|darwin` — overrides platform detection in uninstall, mirrors `AIGAUGE_SETUP_PLATFORM`
+
+**v1 limitations:**
+
+- `dbus-python` only. If the distro has `dasbus` but no `dbus-python`, helper exits 3 with `helper-error:dbus-import-failed`. dasbus support deferred to v1.1.
+- GNOME without AppIndicator/KStatusNotifier extension has no SNI watcher — detection skips installation cleanly.
+- `IconPixmap` fallback for Plasma bug 479712 deferred to v1.1 — v1 relies on `IconName` + `IconThemePath`.
+- No popup window on left-click — left-click opens `ai-gauge-config`. All actions live in the right-click menu.
 
 ## WebSocket Protocol
 
@@ -365,6 +397,16 @@ bin/ai-gauge-server
 6. Appends CSS between `/* ai-gauge-start */` and `/* ai-gauge-end */` markers in `~/.config/waybar/style.css`. Uninstall uses these markers to strip the block.
 7. Restarts waybar via `omarchy-restart-waybar` if available, otherwise `killall -SIGUSR2 waybar`, otherwise hard restart.
 
+8. **Calls `_install_sni_tray()`** — SNI tray setup, guarded by `AIGAUGE_TEST_FORCE_NO_SNI=1` which short-circuits to a "skipped" message. Five helper functions:
+   - `_resolve_tray_path` — resolves absolute path to `bin/ai-gauge-tray`
+   - `_detect_sni_capable` — checks `gdbus` availability + `python3 -c 'import dbus; from gi.repository import GLib'` + SNI watcher introspection on D-Bus
+   - `_install_sni_icons` — copies 6 SVGs to `~/.local/share/icons/hicolor/scalable/apps/`; calls `gtk-update-icon-cache` best-effort
+   - `_install_sni_tray_unit` — substitutes `__BUN_PATH__` + `__TRAY_PATH__` into `lib/ai-gauge-tray.service` and installs to `~/.config/systemd/user/`
+   - `_enable_sni_tray_service` — `systemctl --user daemon-reload && enable --now ai-gauge-tray`
+   - If `_detect_sni_capable` fails, prints "SNI tray not available (skipped — install Plasma/KDE/Cinnamon + python3-dbus + python3-gi to enable)" and returns without error.
+
+`cmd_uninstall` on Linux removes the `ai-gauge-tray` service and the 6 named SVG icons from `~/.local/share/icons/hicolor/scalable/apps/` (NOT the directory itself).
+
 Both setup and uninstall are idempotent — they guard with `grep -q` before patching. Preserve this when editing.
 
 ### macOS setup flow (when `is_macos`)
@@ -388,6 +430,7 @@ Not npm packages — system binaries. None are declared anywhere; if you add a n
 - **Required (Linux)**: `python3` (waybar setup; pre-release validator for `Info.plist` parsing via `plistlib`), `systemctl` (user).
 - **Required (macOS)**: `launchctl`, `plutil`, `codesign`, `sips`, `iconutil`, `lipo` (all built into macOS). Xcode Command Line Tools (for `swift build`) required only when rebuilding the Swift binary locally; users installing the published npm package get the pre-built `bin/AIGauge.app`.
 - **Desktop integration (Linux)**: `notify-send` (libnotify), `wl-copy` (wl-clipboard), `waybar`.
+- **SNI tray (Linux, optional)**: `python3-dbus` (`dbus-python`), `python3-gi` (PyGObject), `gdbus`. Pre-installed on Plasma 6 / KDE Neon / Kubuntu / Fedora KDE. On other distros: `sudo apt install python3-dbus python3-gi` (Debian/Ubuntu), `sudo dnf install python3-dbus python3-gobject` (Fedora), `sudo pacman -S python-dbus python-gobject` (Arch). Setup detects availability and skips installation cleanly when absent.
 - **Optional, `tokenSource: github`**: `gh` (GitHub CLI) — required at runtime for Tier 1 credential resolution (`gh auth token --hostname github.com`). Falls back to file-based tiers if absent.
 - **Optional, Omarchy distro**: `omarchy-launch-walker` (menu/settings UI), `omarchy-restart-waybar`. Scripts degrade gracefully when these are missing.
 - **Optional, StreamDock path**: Wine + Fifine Control Deck + StreamDock app. `run.bat` hardcodes `C:\Program Files (x86)\fifine Control Deck\node\node20.exe` and sets `NODE_SKIP_PLATFORM_CHECK=1` — do not change this path, it is the Fifine-bundled Node the plugin host uses.
@@ -442,3 +485,4 @@ The pre-push hook lives at `.githooks/pre-push` and is activated by `git config 
 - **`lib/ssrf-guard.js`** — SSRF protection on all user-controlled `baseUrl` fetches. Blocks HTTP, private IP ranges (RFC1918, link-local), and IPv6 loopback. Call it before any `fetch()` that uses a URL from config or a settings file.
 - **`lib/log-safe.js`** — secret masking for daemon logs. Use `logJson()` for structured events; never log raw tokens or credential values. The masker redacts anything matching `TOKEN|KEY|SECRET|CREDENTIAL|AUTH|PASSWORD|PASSPHRASE`.
 - **Hardcoded VS Code Copilot ext headers in `lib/providers/copilot.js`** — FRAGILE, see `codex.js` precedent. Update procedure: bump headers when GitHub deprecates them en masse. Check https://marketplace.visualstudio.com/items?itemName=GitHub.copilot for current version. No automated detection.
+- **SNI tray icons MUST be installed to the system theme path** (`~/.local/share/icons/hicolor/scalable/apps/`) — Plasma bug 479712 means icons referenced only by `IconName` without a matching theme entry may not render. `IconPixmap` fallback deferred to v1.1; v1 relies on `IconName` + `IconThemePath`. Do not skip `_install_sni_icons` or `gtk-update-icon-cache` when editing the setup flow.

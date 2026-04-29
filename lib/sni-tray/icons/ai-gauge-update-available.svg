@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-linecap="round">
+  <defs>
+    <linearGradient id="aig-grad-update-available" x1="5" y1="14" x2="19" y2="14" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF9500"/>
+      <stop offset="1" stop-color="#FF3B30"/>
+    </linearGradient>
+  </defs>
+  <!-- gauge track (low-contrast on any backdrop) -->
+  <path d="M5 14A7 7 0 0 1 19 14" stroke="#888888" stroke-opacity="0.35" stroke-width="2.4"/>
+  <!-- gauge fill: ~30% of arc, brand orange-to-red gradient -->
+  <path d="M5 14A7 7 0 0 1 7.89 8.34" stroke="url(#aig-grad-update-available)" stroke-width="2.4"/>
+  <!-- needle pointing up-left toward 30% mark -->
+  <line x1="12" y1="14" x2="8.47" y2="9.15" stroke="#FFFFFF" stroke-width="1.4"/>
+  <!-- center hub: white core + dark hairline -->
+  <circle cx="12" cy="14" r="1.4" fill="#FFFFFF" stroke="#1A1A22" stroke-width="0.4"/>
+  <!-- top-right badge: green dot signals "update available" -->
+  <circle cx="19" cy="5" r="2.4" fill="#43A047"/>
+</svg>

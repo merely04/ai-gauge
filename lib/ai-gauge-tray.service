@@ -1,0 +1,15 @@
+[Unit]
+Description=ai-gauge SNI tray indicator
+Wants=ai-gauge-server.service
+After=ai-gauge-server.service graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=__BUN_PATH__ __TRAY_PATH__
+Restart=on-failure
+RestartSec=5
+Environment=XDG_RUNTIME_DIR=%t
+
+[Install]
+WantedBy=graphical-session.target
