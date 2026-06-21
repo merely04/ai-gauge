@@ -100,6 +100,18 @@ describe("config schema: tokenSource pattern validation", () => {
     expect(validateConfigChange('tokenSource', 'githubXX').valid).toBe(false);
     expect(validateConfigChange('tokenSource', 'github with space').valid).toBe(false);
   });
+
+  test("accepts pi as tokenSource", () => {
+    expect(validateConfigChange('tokenSource', 'pi').valid).toBe(true);
+  });
+
+  test("rejects pi with invalid suffix", () => {
+    expect(validateConfigChange('tokenSource', 'pi-extra bad').valid).toBe(false);
+  });
+
+  test("accepts ollama-cloud as tokenSource", () => {
+    expect(validateConfigChange('tokenSource', 'ollama-cloud').valid).toBe(true);
+  });
 });
 
 describe("config schema: codex plan values", () => {

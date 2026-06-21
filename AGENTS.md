@@ -58,6 +58,8 @@ Token sources (config `tokenSource` field):
 - `opencode`: reads `~/.local/share/opencode/auth.json` → `anthropic.access` / `anthropic.expires`. If the same file ALSO contains an `openai` block with `type: "oauth"`, `access`, and `accountId`, the daemon makes a parallel fetch to `https://chatgpt.com/backend-api/wham/usage` and broadcasts the result under the top-level `secondary` field (best-effort — primary broadcast still succeeds when secondary fails). If the file ALSO contains a `github-copilot` block with `type: "oauth"` and `refresh` (populated by `opencode auth login github-copilot` Device Flow), the daemon makes a third parallel fetch to `https://api.github.com/copilot_internal/v2/token` and broadcasts the result under the top-level `copilot` field. All three providers can broadcast simultaneously (Anthropic primary + Codex secondary + Copilot in `copilot` field). Best-effort — primary broadcast succeeds when copilotSecondary fetch fails.
 - `codex`: reads `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`) → `tokens.access_token` / `tokens.account_id`. Fetches `https://chatgpt.com/backend-api/wham/usage` (undocumented endpoint; reverse-engineered, may change). Falls back to JSONL session parsing at `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` on HTTP 4xx/5xx or network failure.
 - `github`: reads credentials via three tiers in order. Tier 1: `gh auth token --hostname github.com` (works for Keychain, Secret Service, and plaintext stores). Tier 2: `~/.config/gh/hosts.yml` plaintext fallback. Tier 3: `~/.config/ai-gauge/copilot-token` file (accepts `gho_*` OAuth tokens only). Fetches `/copilot_internal/v2/token` (single-shot, short-lived token exchange). Plan auto-detected from the `limit` field in the response: 50 = free, 300 = pro, 1500 = pro-plus.
+- `pi`: reads Pi coding agent credentials from `~/.pi/agent/auth.json` (provider-keyed object; each block has `type: "oauth"|"api_key"`) and `~/.pi/agent/settings.json` (for `defaultProvider`). Pi (pi.dev / badlogic/pi-mono) is a multi-provider coding agent analogous to `opencode`. Supported Pi provider blocks are mapped to existing adapters: `anthropic` → anthropic, `openai-codex` → codex, `github-copilot` → copilot, `openrouter` → openrouter, `zai` → zai (baseUrl `https://api.z.ai`). Unsupported blocks (e.g. `ollama-cloud`, `synthetic`) are skipped gracefully. Primary provider selection is hybrid: honor `settings.defaultProvider` when it maps to a supported block with usable creds, else fixed priority `[anthropic, codex, zai, openrouter]` (`defaultModel` is NOT used for routing). Coverage uses the existing 3-slot broadcast: primary (`rateLimits`/`balance`) + one generalized `secondary` (highest-priority supported provider that isn't primary/copilot) + the dedicated `copilot` field. Copilot from Pi uses the `ghu_` access token and is routed to the `copilot` field (never the primary slot unless it's the only block); blocks with `enterpriseUrl` (GHES) are skipped. Expired OAuth tokens are reported and skipped — no refresh implemented. protocolVersion stays at 4.
+- `ollama-cloud`: monitors Ollama Cloud (ollama.com) session and weekly usage. Ollama Cloud exposes no usage API (`/api/me` returns only plan + subscription dates; all usage endpoints 404), so the daemon scrapes the authenticated web dashboard. Credential is a **browser session cookie** read from `~/.config/ai-gauge/ollama-cookie` — a single line containing the full `Cookie:` header value (e.g. `aid=…; cf_clearance=…; __Secure-session=…`). The `__Secure-session` cookie is the essential one; `cf_clearance` may be needed to pass Cloudflare. To obtain it: log in at `https://ollama.com/settings` → DevTools → Network tab → reload → click the `settings` document request → Request Headers → copy the whole `Cookie:` value (alt: DevTools → Application → Cookies → ollama.com → copy `__Secure-session` and `cf_clearance`). The daemon fetches `GET https://ollama.com/settings` with that cookie and a browser User-Agent, parses the server-rendered HTML (`aria-label="Session usage N% used"` / `"Weekly usage N% used"` and `data-time` reset timestamps), and maps **session → `five_hour`** and **weekly → `seven_day`** so waybar/menubar render it exactly like any other provider — no client changes required. Implementation notes: introduces adapter `kind: 'scrape'` and `responseType: 'text'` (the server reads `res.text()` instead of `res.json()` for this adapter); `ollama.com` is added to the SSRF allowlist. Caveats: the session cookie expires and must be re-extracted periodically; an expired/invalid cookie causes ollama.com to 302-redirect, which the daemon's existing 3xx rejection handles gracefully (cached/empty broadcast, no crash); the HTML parser is pinned to the current DOM and will need regex updates if ollama.com restructures the page (degrades to no-usage-data rather than crashing). No OAuth/auto-refresh. Not auto-detected at setup — requires the cookie file to be placed manually. protocolVersion stays at 4.
 
 State/config paths (never relocate without updating every script):
 
@@ -75,7 +77,7 @@ State/config paths (never relocate without updating every script):
 - `getProvider(name)` → ProviderAdapter (throws if unknown)
 - `detectProviderByBaseUrl(url)` → provider name string (`"anthropic"` for null/undefined, `"unknown"` for unrecognized hosts)
 - `registerProvider(adapter)` — called by each provider module on import
-- `PROVIDER_NAMES` — array of 7 supported provider names
+- `PROVIDER_NAMES` — array of 8 supported provider names
 
 ### ProviderAdapter Interface
 
@@ -84,13 +86,14 @@ Each adapter exports a default object with:
 ```js
 {
   name: string,                          // e.g. "zai"
-  kind: "oauth" | "api-key" | "credit-balance" | "stub",
+  kind: "oauth" | "api-key" | "credit-balance" | "scrape" | "stub",
+  responseType?: "json" | "text",        // default "json"; "text" adapters call res.text() instead of res.json()
   buildRequest(creds, options) → { url, method, headers },
   parseResponse(json, status) → { rateLimits?, balance?, error? }
 }
 ```
 
-Providers: `anthropic` (OAuth), `zai`, `minimax` (api-key), `openrouter`, `komilion` (credit-balance), `packy`, `unknown` (stub), `copilot` (OAuth, single-shot internal): `lib/providers/copilot.js`; fetches `/copilot_internal/v2/token`, returns `copilot` field.
+Providers: `anthropic` (OAuth), `zai`, `minimax` (api-key), `openrouter`, `komilion` (credit-balance), `packy`, `unknown` (stub), `copilot` (OAuth, single-shot internal): `lib/providers/copilot.js`; fetches `/copilot_internal/v2/token`, returns `copilot` field. `ollama-cloud` (scrape, `responseType: "text"`): `lib/providers/ollama-cloud.js`; fetches `https://ollama.com/settings` with a browser session cookie, parses HTML for session/weekly usage percentages; `ollama.com` is in the SSRF allowlist.
 
 ### Settings Discovery
 
@@ -100,7 +103,7 @@ Providers: `anthropic` (OAuth), `zai`, `minimax` (api-key), `openrouter`, `komil
 
 Security: symlinks rejected, apiKeyHelper never executed, files >1MB rejected, settings.local.json excluded, names validated with `/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/`.
 
-Token source pattern for `claude-settings:` sources: `^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
+Token source pattern for `claude-settings:` sources: `^(claude-code|opencode|pi|codex|github|ollama-cloud|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
 
 ## macOS specifics
 
@@ -165,8 +168,8 @@ Field notes:
 - `extra_usage.monthly_limit` and `used_credits` are in cents; divide by 100 for dollars.
 - `balance` — present only for credit-based providers (OpenRouter, Komilion). `total_cents` and `used_cents` are integers; divide by 100 for dollars. Absent (or `null`) for rate-limit-only providers like Anthropic.
 - `code_review` — top-level rate-limit window for Codex code-review feature. `null` for non-Codex providers; `null` on Codex Plus (only present on tiers that have code review enabled). Same shape as `five_hour`/`seven_day`. Added in protocolVersion 3.
-- `secondary` — optional second-provider snapshot, emitted only when `tokenSource: "opencode"` and the OpenCode auth.json contains an OAuth `openai` block. Shape: `{ provider, five_hour, seven_day, code_review, balance }`. `null` for all other tokenSources or when no OpenAI OAuth credentials are present. Added in protocolVersion 4.
-- `copilot` — optional top-level Copilot quota object. Populated when `tokenSource: "github"` (primary) OR when `tokenSource: "opencode"` and the OpenCode auth.json contains a `github-copilot` OAuth block (secondary fetch). `null` otherwise. Shape: `{plan: string, premium_interactions: {utilization: number (0-200), used: number, limit: number, resets_at: ISO string, overage_count: number, overage_permitted: bool}}`. Added in protocolVersion 4 (additive, no bump needed).
+- `secondary` — optional second-provider snapshot, emitted only when `tokenSource: "opencode"` and the OpenCode auth.json contains an OAuth `openai` block. Shape: `{ provider, five_hour, seven_day, code_review, balance }`. `null` for all other tokenSources or when no OpenAI OAuth credentials are present. Added in protocolVersion 4. Also emitted for `tokenSource: "pi"` when the Pi auth.json contains a supported non-primary, non-copilot provider block (highest-priority supported provider that isn't primary/copilot).
+- `copilot` — optional top-level Copilot quota object. Populated when `tokenSource: "github"` (primary) OR when `tokenSource: "opencode"` and the OpenCode auth.json contains a `github-copilot` OAuth block (secondary fetch) OR when `tokenSource: "pi"` and the Pi auth.json contains a `github-copilot` block (uses the `ghu_` access token; blocks with `enterpriseUrl` are skipped). `null` otherwise. Shape: `{plan: string, premium_interactions: {utilization: number (0-200), used: number, limit: number, resets_at: ISO string, overage_count: number, overage_permitted: bool}}`. Added in protocolVersion 4 (additive, no bump needed).
 - `balance.extras` — provider-specific extension fields. For `komilion`: `{trial_credits_cents: number, is_low_balance: boolean}`. Other providers: absent.
 - `meta.plan`, `meta.tokenSource`, and `meta.fetchedAt` are injected by the server from `config.json` / the current state (not upstream Anthropic fields). `tokenSource` is re-broadcast on every poll and immediately after a `setConfig` mutation so clients can reflect the current selection (used by the macOS menubar for checkmarks).
 - `meta.provider` — active provider name as detected by `lib/providers/index.js` (e.g. `"anthropic"`, `"zai"`, `"openrouter"`). Injected by the server; not an upstream field.
@@ -211,8 +214,8 @@ Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, write
 {"type":"setConfig","key":"displayMode","value":"bar-dots"}
 ```
 
-- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`, `plus` (Codex), `business` (Codex), `edu` (Codex); `tokenSource` → `claude-code`, `opencode`, `codex`, `github`; `autoCheckUpdates` → `true`, `false`; `displayMode` → `full`, `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
-- `tokenSource` also accepts `claude-settings:{name}` values matching `^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
+- key/value pairs: `plan` → `max`, `pro`, `team`, `enterprise`, `unknown`, `plus` (Codex), `business` (Codex), `edu` (Codex); `tokenSource` → `claude-code`, `opencode`, `pi`, `codex`, `github`, `ollama-cloud`; `autoCheckUpdates` → `true`, `false`; `displayMode` → `full`, `percent-only`, `bar-dots`, `number-bar`, `time-to-reset`
+- `tokenSource` also accepts `claude-settings:{name}` values matching `^(claude-code|opencode|pi|codex|github|ollama-cloud|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$`
 - Server **rejects** any value outside the canonical enum (logs warning, sends `{type:"configError",...}` to the requesting client, config unchanged)
 - For `tokenSource` changes the server invalidates `cachedData`, broadcasts an empty payload to all clients with `meta.tokenSource` set to the new value (so optimistic clients can clear their "Switching…" state immediately), then runs `fetchAndHandleBroadcast({force:true})` to fetch fresh usage. On fetch failure, a second empty broadcast is emitted and the requester gets a `configError` with the failure reason.
 - Do NOT change the raw-broadcast shape without updating both `bin/ai-gauge-waybar` and `macos/AIGauge/Sources/AIGauge/UsageModel.swift` in the same commit.
@@ -222,7 +225,7 @@ Client sends to mutate `~/.config/ai-gauge/config.json`. Server validates, write
 Sent only to the WebSocket client that issued the offending `setConfig` command. Lets the menubar abort its optimistic "Switching…" state immediately instead of waiting for the watchdog timeout.
 
 ```json
-{"type":"configError","key":"tokenSource","value":"not a valid src","reason":"invalid tokenSource=not a valid src: must match /^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$/"}
+{"type":"configError","key":"tokenSource","value":"not a valid src","reason":"invalid tokenSource=not a valid src: must match /^(claude-code|opencode|pi|codex|github|ollama-cloud|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$/"}
 ```
 
 Emitted when:

@@ -13,6 +13,7 @@ Before proceeding, verify:
 - An OAuth token source is available — one of:
   - Claude Code CLI authenticated via OAuth (`~/.claude/.credentials.json` with `claudeAiOauth.accessToken`)
   - OpenCode authenticated with Anthropic (`~/.local/share/opencode/auth.json` with `anthropic.access`)
+  - Pi coding agent authenticated (`~/.pi/agent/auth.json` with at least one supported provider block)
   - Codex CLI authenticated (`~/.codex/auth.json` with `tokens.access_token` + `tokens.account_id`)
   - Custom Anthropic-compatible provider via `~/.claude/settings.<name>.json` (Z.ai, MiniMax, OpenRouter, Komilion, Packy)
   - GitHub Copilot (`tokenSource: github`) — requires `gh` CLI authenticated via `gh auth login`
@@ -54,7 +55,7 @@ On **macOS**, `ai-gauge setup` installs two LaunchAgents (server + menubar) and 
 Default is `claude-code`. If the user does not use Claude Code CLI, switch immediately after install:
 
 ```bash
-ai-gauge-config set tokenSource opencode      # or codex, or claude-settings:<name>
+ai-gauge-config set tokenSource opencode      # or pi, codex, or claude-settings:<name>
 ai-gauge-config set plan max                  # max | pro | team | enterprise | unknown
                                               # (or plus | pro | business | enterprise | edu for codex)
 ```
@@ -63,7 +64,9 @@ ai-gauge-config set plan max                  # max | pro | team | enterprise | 
 |-------------|---------------------|-------------|
 | `claude-code` | macOS: Keychain `Claude Code-credentials` (Claude Code v2.0.14+) → fallback `~/.claude/.credentials.json`<br>Linux: `~/.claude/.credentials.json` only | Claude Code CLI is installed and authenticated |
 | `opencode` | `~/.local/share/opencode/auth.json` (Linux primary) or `~/Library/Application Support/opencode/auth.json` (macOS fallback) | OpenCode is the primary tool. If the same file also has an `openai` OAuth block, ai-gauge fetches Codex usage in parallel and shows both providers in the tooltip |
+| `pi` | `~/.pi/agent/auth.json` (provider-keyed object) + `~/.pi/agent/settings.json` (for `defaultProvider`) | Pi coding agent (pi.dev / badlogic/pi-mono) is the primary tool. Supported provider blocks — `anthropic`, `openai-codex`, `github-copilot`, `openrouter`, `zai` — are mapped to existing adapters. Primary provider is selected from `settings.defaultProvider` when usable, else fixed priority `[anthropic, codex, zai, openrouter]`. Copilot quota appears in the `copilot` broadcast field; a second provider appears in `secondary`. Unsupported blocks (e.g. `ollama-cloud`) are skipped. |
 | `codex` | `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`) — must be `cli_auth_credentials_store: "file"` mode (default), Keychain mode is not supported | ChatGPT Plus/Pro/Business/Enterprise/Edu subscriber using Codex CLI |
+| `ollama-cloud` | `~/.config/ai-gauge/ollama-cookie` — single line containing the full browser `Cookie:` header value (e.g. `aid=…; cf_clearance=…; __Secure-session=…`). Not auto-detected; must be placed manually. Cookie expires periodically and must be re-extracted from DevTools. | Ollama Cloud (ollama.com) session + weekly usage. No usage API exists — the daemon scrapes the authenticated web dashboard. |
 | `claude-settings:<name>` | `~/.claude/settings.<name>.json` with `env.ANTHROPIC_BASE_URL` + `env.ANTHROPIC_AUTH_TOKEN` | Custom Anthropic-compatible provider (Z.ai, MiniMax, OpenRouter, Komilion). Plain `sk-ant-*` API keys cannot fetch usage — only OAuth-bearing providers work |
 
 The server restarts automatically after `ai-gauge-config set`.
@@ -143,7 +146,7 @@ The icon shows `✦ ···` while connecting, then switches to `✦ <percent>% <
 
 ### Configure Token Source
 
-Same as Linux — see the **Configure Token Source** section above for the full table of options (`claude-code`, `opencode`, `codex`, `claude-settings:<name>`).
+Same as Linux — see the **Configure Token Source** section above for the full table of options (`claude-code`, `opencode`, `pi`, `codex`, `claude-settings:<name>`).
 
 ```bash
 ai-gauge-config set tokenSource opencode      # or codex, or claude-settings:<name>

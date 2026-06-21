@@ -123,10 +123,10 @@ if [[ "${1:-}" == "set" ]]; then
             esac
             ;;
         tokenSource)
-            if [[ "$value" =~ ^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$ ]]; then
+            if [[ "$value" =~ ^(claude-code|opencode|codex|github|pi|ollama-cloud|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$ ]]; then
                 :
             else
-                echo "Error: tokenSource must match pattern ^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$" >&2
+                echo "Error: tokenSource must match pattern ^(claude-code|opencode|codex|github|pi|ollama-cloud|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$" >&2
                 exit 1
             fi
             ;;
@@ -187,7 +187,7 @@ case "$choice" in
         if [[ -f "$SCRIPT_DIR/../lib/cli-list-settings.js" ]]; then
             settings_list=$(bun "$SCRIPT_DIR/../lib/cli-list-settings.js" --format=walker 2>/dev/null)
         fi
-        all_options=("claude-code" "opencode" "codex" "github")
+         all_options=("claude-code" "opencode" "codex" "github" "pi" "ollama-cloud")
         if [[ -n "$settings_list" ]]; then
             while IFS= read -r line; do
                 [[ -z "$line" ]] && continue

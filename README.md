@@ -245,10 +245,11 @@ Config file: `~/.config/ai-gauge/config.json`
 On first install, `ai-gauge setup` auto-detects which token source to use by checking which credential files exist:
 
 1. **OpenCode** (`~/.local/share/opencode/auth.json` on Linux, `~/Library/Application Support/opencode/auth.json` on macOS)
-2. **OpenAI Codex** (`~/.codex/auth.json` or `$CODEX_HOME/auth.json`)
-3. **Claude Code** (Keychain on macOS, `~/.claude/.credentials.json` on Linux)
+2. **Pi** (`~/.pi/agent/auth.json`)
+3. **OpenAI Codex** (`~/.codex/auth.json` or `$CODEX_HOME/auth.json`)
+4. **Claude Code** (Keychain on macOS, `~/.claude/.credentials.json` on Linux)
 
-If multiple sources exist, the most recently modified one wins (with fixed priority `opencode > codex > claude-code` as a tiebreaker). Auto-detect runs **only on first install** — subsequent `ai-gauge setup` runs preserve your existing choice.
+If multiple sources exist, the most recently modified one wins (with fixed priority `opencode > pi > codex > claude-code` as a tiebreaker). Auto-detect runs **only on first install** — subsequent `ai-gauge setup` runs preserve your existing choice.
 
 To switch later, use the menu (macOS submenu / Linux right-click → "🔑 Token source") or CLI:
 
@@ -258,7 +259,7 @@ ai-gauge-config set tokenSource opencode
 
 | Field | Values | Description |
 |-------|--------|-------------|
-| `tokenSource` | `claude-code` (default), `opencode`, `codex`, `github`, `claude-settings:<name>` | OAuth credential source |
+| `tokenSource` | `claude-code` (default), `opencode`, `pi`, `codex`, `github`, `ollama-cloud`, `claude-settings:<name>` | OAuth credential source |
 | `plan` | `max`, `pro`, `team`, `enterprise`, `unknown` (Anthropic) <br> `plus`, `pro`, `business`, `enterprise`, `edu` (Codex) | Subscription plan (shown in tooltip) |
 | `displayMode` | `full` (default), `percent-only`, `bar-dots`, `number-bar`, `time-to-reset` | Display format for menubar/waybar |
 
@@ -315,6 +316,63 @@ The daemon will fetch `https://chatgpt.com/backend-api/wham/usage` (the same end
 - Codex CLI installed and logged in (`codex` will create `~/.codex/auth.json` on first login)
 - Credentials stored in **file mode** — the default. If you set `cli_auth_credentials_store: "macOS_keychain"` in `~/.codex/config.toml`, ai-gauge cannot read your tokens (background launchd agents can't show interactive Keychain prompts) and will degrade to JSONL session parsing.
 - Plain OpenAI API keys (`sk-...`) are **not supported** — the `/wham/usage` endpoint requires the OAuth `access_token` from `codex auth login`.
+
+## Pi Coding Agent
+
+ai-gauge can monitor usage from [Pi](https://pi.dev) (badlogic/pi-mono), a multi-provider coding agent that stores credentials in `~/.pi/agent/auth.json`.
+
+```bash
+# Make sure Pi is logged in (pi auth login or equivalent)
+ai-gauge-config set tokenSource pi
+```
+
+Pi's `auth.json` is a provider-keyed object. ai-gauge maps each supported block to an existing provider adapter:
+
+| Pi block | Adapter | Notes |
+|----------|---------|-------|
+| `anthropic` | Anthropic OAuth | Primary by default |
+| `openai-codex` | Codex | Shown in `secondary` field |
+| `github-copilot` | Copilot | Shown in `copilot` field; `ghu_` token required; GHES (`enterpriseUrl`) skipped |
+| `openrouter` | OpenRouter | Credit balance |
+| `zai` | Z.ai | Rate limits via `https://api.z.ai` |
+
+Unsupported blocks (e.g. `ollama-cloud`, `synthetic`) are skipped gracefully.
+
+**Primary provider selection** is hybrid: if `~/.pi/agent/settings.json` has a `defaultProvider` that maps to a supported block with usable credentials, that provider is used. Otherwise the daemon falls back to fixed priority `[anthropic, codex, zai, openrouter]`. (`defaultModel` is not used for routing.)
+
+The broadcast uses the same 3-slot layout as OpenCode: primary usage in `rateLimits`/`balance`, the next-highest supported provider in `secondary`, and Copilot quota in `copilot`. Expired OAuth tokens are reported and skipped — no automatic refresh.
+
+## Ollama Cloud
+
+ai-gauge can monitor your [Ollama Cloud](https://ollama.com) session and weekly usage. Ollama Cloud has no usage API — `ai-gauge` scrapes the authenticated web dashboard instead.
+
+**Credential**: a browser session cookie stored in `~/.config/ai-gauge/ollama-cookie` (single line, full `Cookie:` header value).
+
+**How to get the cookie**:
+
+1. Log in at `https://ollama.com/settings`
+2. Open DevTools → Network tab → reload the page
+3. Click the `settings` document request → Request Headers → copy the entire `Cookie:` value
+
+Alternatively: DevTools → Application → Cookies → ollama.com → copy `__Secure-session` (required) and `cf_clearance` (may be needed to pass Cloudflare).
+
+```bash
+# Paste the cookie value into the file (single line, no trailing newline needed)
+echo 'aid=…; cf_clearance=…; __Secure-session=…' > ~/.config/ai-gauge/ollama-cookie
+
+ai-gauge-config set tokenSource ollama-cloud
+systemctl --user restart ai-gauge-server   # Linux
+# macOS: launchctl kickstart -k gui/$(id -u)/com.ai-gauge.server
+```
+
+The daemon fetches `https://ollama.com/settings` with your cookie and a browser User-Agent, parses the HTML for session and weekly usage percentages, and maps them to `five_hour` and `seven_day` — so waybar and the menubar render Ollama Cloud exactly like any other provider.
+
+**Caveats**:
+
+- The session cookie expires periodically. When it does, ollama.com returns a 302 redirect, which the daemon rejects gracefully — you'll see an empty/cached broadcast rather than a crash. Re-extract the cookie to restore data.
+- The HTML parser is pinned to the current ollama.com DOM. If the page structure changes, usage data degrades to empty rather than crashing.
+- `ollama-cloud` is **not auto-detected** at setup — you must place the cookie file manually before switching to this token source.
+- No OAuth or automatic token refresh.
 
 ## Using a Different Claude Provider
 

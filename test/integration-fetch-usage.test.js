@@ -5,6 +5,7 @@ import { join } from 'node:path';
 const zaiFixture = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/zai-happy.json'), 'utf8'));
 const codexFixturePro = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/codex-wham-usage-pro.json'), 'utf8'));
 const codexSessionFixture = readFileSync(join(import.meta.dir, 'fixtures/providers/codex-session-rollout.jsonl'), 'utf8');
+const copilotFixture = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/copilot-individual-pro-happy.json'), 'utf8'));
 
 let fetchUsage;
 let setFetchImpl;
@@ -490,5 +491,253 @@ describe('fetchUsage codex integration', () => {
     });
 
     expect(result).toBe(true);
+  });
+});
+
+describe('fetchUsage pi tokenSource — generalized secondary', () => {
+  const anthropicHappy = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/anthropic-happy.json'), 'utf8'));
+
+  let piFetchUsage;
+  let piSetFetchImpl;
+  let piSetReadCredentialsImpl;
+  let piStateDir;
+  let originalTmpdir;
+  let originalXdg;
+
+  const piConfig = { tokenSource: 'pi', plan: 'unknown', displayMode: 'full', autoCheckUpdates: true };
+  const opencodeConfig = { tokenSource: 'opencode', plan: 'unknown', displayMode: 'full', autoCheckUpdates: true };
+
+  beforeAll(async () => {
+    const suffix = Math.random().toString(36).slice(2);
+    originalTmpdir = process.env.TMPDIR;
+    originalXdg = process.env.XDG_RUNTIME_DIR;
+    // Server computes STATE_DIR at import from TMPDIR (darwin) / XDG_RUNTIME_DIR (linux);
+    // redirect both, then cache-bust the import so usage.json is readable here.
+    process.env.TMPDIR = `/tmp/ai-gauge-pi-${suffix}/`;
+    process.env.XDG_RUNTIME_DIR = `/tmp/ai-gauge-pi-${suffix}/`;
+    piStateDir = `/tmp/ai-gauge-pi-${suffix}/ai-gauge`;
+    mkdirSync(piStateDir, { recursive: true });
+
+    const mod = await import(`../bin/ai-gauge-server?pi-secondary=${suffix}`);
+    piFetchUsage = mod.fetchUsage;
+    piSetFetchImpl = mod.setFetchImpl;
+    piSetReadCredentialsImpl = mod.setReadCredentialsImpl;
+  });
+
+  afterEach(() => {
+    piSetFetchImpl(null);
+    piSetReadCredentialsImpl(null);
+    try { rmSync(piStateDir, { recursive: true, force: true }); } catch {}
+    mkdirSync(piStateDir, { recursive: true });
+  });
+
+  afterAll(() => {
+    if (originalTmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = originalTmpdir;
+    if (originalXdg === undefined) delete process.env.XDG_RUNTIME_DIR; else process.env.XDG_RUNTIME_DIR = originalXdg;
+    try { rmSync(piStateDir, { recursive: true, force: true }); } catch {}
+  });
+
+  function readBroadcast() {
+    return JSON.parse(readFileSync(join(piStateDir, 'usage.json'), 'utf8'));
+  }
+
+  it('anthropic primary + zai secondary: broadcasts anthropic rateLimits and a zai secondary built against its baseUrl', async () => {
+    const calls = [];
+    piSetFetchImpl(async (url, opts) => {
+      calls.push({ url, headers: opts.headers });
+      if (url.includes('api.anthropic.com')) {
+        return new Response(JSON.stringify(anthropicHappy), { status: 200 });
+      }
+      if (url.includes('api.z.ai')) {
+        return new Response(JSON.stringify(zaiFixture), { status: 200 });
+      }
+      return new Response('not found', { status: 404 });
+    });
+
+    const result = await piFetchUsage({
+      token: 'PI_ANT_TOKEN',
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'pi',
+      baseUrl: null,
+      subscriptionType: 'unknown',
+      secondary: {
+        provider: 'zai',
+        token: 'PI_ZAI_KEY',
+        expiresAt: null,
+        baseUrl: 'https://api.z.ai',
+      },
+    }, piConfig);
+
+    expect(result).toBe(true);
+
+    const persisted = readBroadcast();
+    expect(persisted.five_hour).toBeTruthy();
+    expect(persisted.five_hour.utilization).toBe(44);
+    expect(persisted.secondary).toBeTruthy();
+    expect(persisted.secondary.provider).toBe('zai');
+    expect(persisted.meta.provider).toBe('anthropic');
+
+    const zaiCall = calls.find((c) => c.url.includes('api.z.ai'));
+    expect(zaiCall).toBeTruthy();
+    expect(zaiCall.url).toBe('https://api.z.ai/api/monitor/usage/quota/limit');
+    expect(zaiCall.headers.Authorization).toBe('PI_ZAI_KEY');
+  });
+
+  it('zai primary (baseUrl set): broadcasts zai rateLimits and never re-reads credentials', async () => {
+    let rereadCalled = false;
+    piSetReadCredentialsImpl(async () => { rereadCalled = true; return null; });
+
+    const calls = [];
+    piSetFetchImpl(async (url) => {
+      calls.push(url);
+      return new Response(JSON.stringify(zaiFixture), { status: 200 });
+    });
+
+    const result = await piFetchUsage({
+      token: 'PI_ZAI_PRIMARY',
+      expiresAt: null,
+      provider: 'zai',
+      tokenSource: 'pi',
+      baseUrl: 'https://api.z.ai',
+      subscriptionType: 'unknown',
+    }, piConfig);
+
+    expect(result).toBe(true);
+    const persisted = readBroadcast();
+    expect(persisted.five_hour.utilization).toBe(15);
+    expect(persisted.seven_day.utilization).toBe(45);
+    expect(persisted.meta.provider).toBe('zai');
+    expect(calls.length).toBe(1);
+    expect(rereadCalled).toBe(false);
+  });
+
+  it('zai primary (baseUrl set): does NOT retry on 401 because baseUrl disables token rotation', async () => {
+    let rereadCalled = false;
+    piSetReadCredentialsImpl(async () => { rereadCalled = true; return null; });
+
+    let calls = 0;
+    piSetFetchImpl(async () => {
+      calls++;
+      return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 });
+    });
+
+    const result = await piFetchUsage({
+      token: 'PI_ZAI_PRIMARY',
+      expiresAt: null,
+      provider: 'zai',
+      tokenSource: 'pi',
+      baseUrl: 'https://api.z.ai',
+      subscriptionType: 'unknown',
+    }, piConfig);
+
+    expect(result).toBe(false);
+    expect(calls).toBe(1);
+    expect(rereadCalled).toBe(false);
+  });
+
+  it('copilot-only primary: broadcasts the copilot field with five_hour null', async () => {
+    piSetFetchImpl(async () => new Response(JSON.stringify(copilotFixture), { status: 200 }));
+
+    const result = await piFetchUsage({
+      token: 'PI_GHU_TOKEN',
+      expiresAt: null,
+      provider: 'copilot',
+      tokenSource: 'pi',
+      baseUrl: null,
+      subscriptionType: 'unknown',
+    }, piConfig);
+
+    expect(result).toBe(true);
+    const persisted = readBroadcast();
+    expect(persisted.copilot).toBeTruthy();
+    expect(persisted.copilot.plan).toBe('pro');
+    expect(persisted.meta.provider).toBe('copilot');
+    expect(persisted.secondary).toBeNull();
+    expect(persisted.five_hour ?? null).toBeNull();
+  });
+
+  it('secondary fetch failure (401) is best-effort: primary still broadcasts and secondary is null', async () => {
+    piSetFetchImpl(async (url) => {
+      if (url.includes('api.anthropic.com')) {
+        return new Response(JSON.stringify(anthropicHappy), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 });
+    });
+
+    const result = await piFetchUsage({
+      token: 'PI_ANT_TOKEN',
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'pi',
+      baseUrl: null,
+      subscriptionType: 'unknown',
+      secondary: {
+        provider: 'zai',
+        token: 'BAD_ZAI_KEY',
+        expiresAt: null,
+        baseUrl: 'https://api.z.ai',
+      },
+    }, piConfig);
+
+    expect(result).toBe(true);
+    const persisted = readBroadcast();
+    expect(persisted.five_hour).toBeTruthy();
+    expect(persisted.secondary).toBeNull();
+  });
+
+  it('regression: a codex secondary WITHOUT account_id is skipped (secondary stays null)', async () => {
+    let codexCalled = false;
+    piSetFetchImpl(async (url) => {
+      if (url.includes('chatgpt.com')) {
+        codexCalled = true;
+        return new Response(JSON.stringify(codexFixturePro), { status: 200 });
+      }
+      return new Response(JSON.stringify(anthropicHappy), { status: 200 });
+    });
+
+    const result = await piFetchUsage({
+      token: 'ANT_TOKEN',
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'opencode',
+      baseUrl: null,
+      subscriptionType: 'unknown',
+      secondary: {
+        provider: 'codex',
+        token: 'CODEX_TOKEN',
+        expiresAt: null,
+        // account_id intentionally absent — codex still requires it.
+      },
+    }, opencodeConfig);
+
+    expect(result).toBe(true);
+    expect(codexCalled).toBe(false);
+    const persisted = readBroadcast();
+    expect(persisted.secondary).toBeNull();
+  });
+
+  it('regression: a non-codex (anthropic) secondary WITHOUT account_id is allowed (secondary populated)', async () => {
+    piSetFetchImpl(async () => new Response(JSON.stringify(anthropicHappy), { status: 200 }));
+
+    const result = await piFetchUsage({
+      token: 'ANT_PRIMARY',
+      expiresAt: null,
+      provider: 'anthropic',
+      tokenSource: 'pi',
+      baseUrl: null,
+      subscriptionType: 'unknown',
+      secondary: {
+        provider: 'anthropic',
+        token: 'ANT_SECONDARY',
+        expiresAt: null,
+        // account_id intentionally absent — must NOT block a non-codex secondary.
+      },
+    }, piConfig);
+
+    expect(result).toBe(true);
+    const persisted = readBroadcast();
+    expect(persisted.secondary).toBeTruthy();
+    expect(persisted.secondary.provider).toBe('anthropic');
   });
 });

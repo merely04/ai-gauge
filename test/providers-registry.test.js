@@ -3,13 +3,14 @@ import '../lib/providers/anthropic.js';
 import { getProvider, detectProviderByBaseUrl, PROVIDER_NAMES, registerProvider } from '../lib/providers/index.js';
 
 describe('Provider Registry', () => {
-  it('PROVIDER_NAMES includes all 9 providers', () => {
+  it('PROVIDER_NAMES includes all 10 providers', () => {
     expect(PROVIDER_NAMES).toContain('anthropic');
     expect(PROVIDER_NAMES).toContain('zai');
     expect(PROVIDER_NAMES).toContain('codex');
     expect(PROVIDER_NAMES).toContain('copilot');
+    expect(PROVIDER_NAMES).toContain('ollama-cloud');
     expect(PROVIDER_NAMES).toContain('unknown');
-    expect(PROVIDER_NAMES).toHaveLength(9);
+    expect(PROVIDER_NAMES).toHaveLength(10);
   });
 
   it('includes codex', () => {

@@ -9,6 +9,8 @@ import { atomicWriteJSON } from '../lib/atomic-write.js';
 import { readClaudeCodeCredentials, readOpenCodeCredentials, isTokenValid, CREDS_FILE, OPENCODE_AUTH_FILE_PRIMARY, OPENCODE_AUTH_FILE_MAC } from '../lib/credentials.js';
 import { readCopilotCredentials } from '../lib/credentials-copilot.js';
 import { readCodexCredentials } from '../lib/credentials-codex.js';
+import { readPiCredentials } from '../lib/credentials-pi.js';
+import { readOllamaCloudCredentials } from '../lib/credentials-ollama.js';
 import { discoverSettingsFiles, readSettingsFileForCreds } from '../lib/settings-discovery.js';
 import { logJson, sanitizeError } from '../lib/log-safe.js';
 import { buildMeta, PACKAGE_VERSION } from '../lib/meta.js';
@@ -23,6 +25,7 @@ import '../lib/providers/komilion.js';
 import '../lib/providers/packy.js';
 import '../lib/providers/copilot.js';
 import '../lib/providers/codex.js';
+import '../lib/providers/ollama-cloud.js';
 import '../lib/providers/unknown.js';
 
 const STATE_DIR = `${process.platform === 'darwin' ? (process.env.TMPDIR || '/tmp') : (process.env.XDG_RUNTIME_DIR || '/tmp')}/ai-gauge`;
@@ -107,6 +110,41 @@ async function readCredentials(config) {
       tokenSource: src,
       baseUrl: null,
       provider: 'copilot',
+    };
+  }
+
+  if (src === 'pi') {
+    const c = await readPiCredentials();
+    if (!c) {
+      logJson(console.error, 'credentials_missing', { source: 'pi' });
+      return null;
+    }
+    logJson(console.error, 'credentials_loaded', {
+      source: 'pi',
+      provider: c.provider,
+      secondary: c.secondary ? c.secondary.provider : null,
+      copilotSecondary: c.copilotSecondary ? c.copilotSecondary.provider : null,
+    });
+    // Preserve the variable primary provider/baseUrl from the pi bundle — unlike the
+    // claude-code/opencode branches that hardcode anthropic. Spreading ...c keeps
+    // c.provider / c.baseUrl / c.account_id / c.secondary / c.copilotSecondary intact.
+    return { ...c, tokenSource: 'pi' };
+  }
+
+  if (src === 'ollama-cloud') {
+    const c = await readOllamaCloudCredentials();
+    if (!c) {
+      logJson(console.error, 'credentials_missing', { source: 'ollama-cloud', reason: 'no-cookie-file' });
+      return null;
+    }
+    logJson(console.error, 'credentials_loaded', { source: 'ollama-cloud', provider: 'ollama-cloud', credSource: c.source });
+    return {
+      token: c.token,
+      expiresAt: null,
+      subscriptionType: 'unknown',
+      tokenSource: 'ollama-cloud',
+      baseUrl: null,
+      provider: 'ollama-cloud',
     };
   }
 
@@ -288,12 +326,12 @@ async function fetchUsage(creds, config, { generation, signal, _retriedAfterAuth
       return false;
     }
 
-    let json = null;
+    let body = null;
     try {
-      json = await res.json();
+      body = adapter.responseType === 'text' ? await res.text() : await res.json();
     } catch {}
 
-    const parsed = adapter.parseResponse(json, res.status);
+    const parsed = adapter.parseResponse(body, res.status);
     if (parsed.error) {
       const status = parsed.error.status;
       const isAuthError = status === 401 || status === 403;
@@ -362,10 +400,12 @@ async function fetchAdapterParallel({ adapter, buildArgs, signal, logPrefix, pro
 
     if (res.status >= 300 && res.status < 400) return null;
 
-    let json = null;
-    try { json = await res.json(); } catch {}
+    let body = null;
+    try {
+      body = adapter.responseType === 'text' ? await res.text() : await res.json();
+    } catch {}
 
-    const parsed = adapter.parseResponse(json, res.status);
+    const parsed = adapter.parseResponse(body, res.status);
     if (parsed.error) {
       logJson(console.warn, `${logPrefix}_provider_error`, {
         provider: providerName,
@@ -383,7 +423,10 @@ async function fetchAdapterParallel({ adapter, buildArgs, signal, logPrefix, pro
 }
 
 async function fetchSecondary(secondaryCreds, signal) {
-  if (!secondaryCreds?.token || !secondaryCreds?.account_id) return null;
+  if (!secondaryCreds?.token) return null;
+  // account_id is required ONLY for codex (its buildRequest throws without it).
+  // Non-codex secondaries (anthropic/zai/openrouter) carry no account_id.
+  if (secondaryCreds.provider === 'codex' && !secondaryCreds.account_id) return null;
   if (secondaryCreds.expiresAt !== null && !isTokenValid(secondaryCreds.expiresAt)) {
     logJson(console.error, 'secondary_token_expired', { provider: secondaryCreds.provider });
     return null;
@@ -396,7 +439,7 @@ async function fetchSecondary(secondaryCreds, signal) {
     adapter,
     buildArgs: [
       { token: secondaryCreds.token, account_id: secondaryCreds.account_id, claudeVersion },
-      { baseUrl: null },
+      { baseUrl: secondaryCreds.baseUrl ?? null },
     ],
     signal,
     logPrefix: 'secondary',
