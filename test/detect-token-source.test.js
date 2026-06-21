@@ -19,6 +19,7 @@ function pathsFor(tempDir) {
     opencodePrimary: join(tempDir, '.local', 'share', 'opencode', 'auth.json'),
     opencodeMac: join(tempDir, 'Library', 'Application Support', 'opencode', 'auth.json'),
     codex: join(tempDir, '.codex', 'auth.json'),
+    pi: join(tempDir, '.pi', 'agent', 'auth.json'),
   };
 }
 
@@ -49,6 +50,11 @@ function writeCodex(paths, { access_token = 'cx-token', account_id = 'ACC-1' } =
   if (access_token !== undefined) tokens.access_token = access_token;
   if (account_id !== undefined) tokens.account_id = account_id;
   writeFileSync(paths.codex, JSON.stringify({ tokens, auth_mode: 'Chatgpt' }));
+}
+
+function writePI(paths, authObject = { anthropic: { type: 'oauth', access: 'pi-token', expires: Date.now() + 3600000 } }) {
+  ensureDir(join(paths.pi, '..'));
+  writeFileSync(paths.pi, JSON.stringify(authObject));
 }
 
 function setMtime(path, ms) {
@@ -545,5 +551,91 @@ describe('detectTokenSource', () => {
     expect(result.source).toBe('opencode');
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0].mtime).toBe(0);
+  });
+
+  it('27. only pi valid → source=pi, reason=only-valid', async () => {
+    tempDir = createTempDir();
+    const paths = pathsFor(tempDir);
+    writePI(paths);
+
+    const result = await detectTokenSource(makeBaseDeps(tempDir, { paths }));
+
+    expect(result.source).toBe('pi');
+    expect(result.reason).toBe('only-valid');
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0].source).toBe('pi');
+  });
+
+  it('28. pi store with only unsupported provider (ollama-cloud) → filtered out', async () => {
+    tempDir = createTempDir();
+    const paths = pathsFor(tempDir);
+    writePI(paths, { 'ollama-cloud': { type: 'oauth', access: 'ol-token', expires: Date.now() + 3600000 } });
+
+    const result = await detectTokenSource(makeBaseDeps(tempDir, { paths }));
+
+    expect(result.source).toBe('claude-code');
+    expect(result.reason).toBe('no-credentials-found');
+    expect(result.candidates).toEqual([]);
+  });
+
+  it('29. four sources, identical mtime → priority opencode > pi > codex > claude-code (opencode wins)', async () => {
+    tempDir = createTempDir();
+    const paths = pathsFor(tempDir);
+    writeClaudeCodeFile(paths);
+    writeOpencodePrimary(paths);
+    writeCodex(paths);
+    writePI(paths);
+
+    const fixed = Date.now() - 60_000;
+    setMtime(paths.creds, fixed);
+    setMtime(paths.opencodePrimary, fixed);
+    setMtime(paths.codex, fixed);
+    setMtime(paths.pi, fixed);
+
+    const result = await detectTokenSource(makeBaseDeps(tempDir, { paths }));
+
+    expect(result.source).toBe('opencode');
+    expect(result.reason).toBe('priority');
+    expect(result.candidates).toHaveLength(4);
+  });
+
+  it('30. pi vs codex vs claude-code at same mtime → pi wins (priority middle)', async () => {
+    tempDir = createTempDir();
+    const paths = pathsFor(tempDir);
+    writeClaudeCodeFile(paths);
+    writeCodex(paths);
+    writePI(paths);
+
+    const fixed = Date.now() - 60_000;
+    setMtime(paths.creds, fixed);
+    setMtime(paths.codex, fixed);
+    setMtime(paths.pi, fixed);
+
+    const result = await detectTokenSource(makeBaseDeps(tempDir, { paths }));
+
+    expect(result.source).toBe('pi');
+    expect(result.reason).toBe('priority');
+    expect(result.candidates).toHaveLength(3);
+  });
+
+  it('31. all four valid, pi newest → source=pi, reason=mtime-latest', async () => {
+    tempDir = createTempDir();
+    const paths = pathsFor(tempDir);
+    writeClaudeCodeFile(paths);
+    writeOpencodePrimary(paths);
+    writeCodex(paths);
+    writePI(paths);
+
+    const now = Date.now();
+    setMtime(paths.creds, now - 3 * 3600 * 1000);
+    setMtime(paths.opencodePrimary, now - 2 * 3600 * 1000);
+    setMtime(paths.codex, now - 1 * 3600 * 1000);
+    setMtime(paths.pi, now);
+
+    const result = await detectTokenSource(makeBaseDeps(tempDir, { paths }));
+
+    expect(result.source).toBe('pi');
+    expect(result.reason).toBe('mtime-latest');
+    expect(result.candidates).toHaveLength(4);
   });
 });

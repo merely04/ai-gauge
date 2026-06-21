@@ -101,4 +101,52 @@ describe('waybar render: protocol v2 backward compatibility', () => {
     expect(out.tooltip).toContain('Provider: unknown');
     expect(out.tooltip).not.toContain('Balance:');
   });
+
+  test('Case 6 — pi tokenSource with anthropic provider shows "Pi Usage" header', () => {
+    const data = {
+      five_hour: { utilization: 44, resets_at: FIVE_HOUR_RESET },
+      seven_day: { utilization: 15, resets_at: SEVEN_DAY_RESET },
+      seven_day_sonnet: null,
+      extra_usage: null,
+      meta: { plan: 'max', provider: 'anthropic', tokenSource: 'pi', displayMode: 'full' },
+      balance: null,
+    };
+
+    const out = render(data, {}, FIXED_NOW);
+
+    expect(out.tooltip).toContain('Pi Usage');
+    expect(out.class).toBe('normal');
+  });
+
+  test('Case 7 — pi tokenSource with zai provider shows "Z.ai Usage" (provider wins)', () => {
+    const data = {
+      five_hour: { utilization: 44, resets_at: FIVE_HOUR_RESET },
+      seven_day: { utilization: 15, resets_at: SEVEN_DAY_RESET },
+      seven_day_sonnet: null,
+      extra_usage: null,
+      meta: { plan: 'unknown', provider: 'zai', tokenSource: 'pi', displayMode: 'full' },
+      balance: null,
+    };
+
+    const out = render(data, {}, FIXED_NOW);
+
+    expect(out.tooltip).toContain('Z.ai Usage');
+    expect(out.tooltip).not.toContain('Pi Usage');
+  });
+
+  test('Case 8 — ollama-cloud tokenSource shows "Ollama Cloud Usage" header', () => {
+    const data = {
+      five_hour: { utilization: 44, resets_at: FIVE_HOUR_RESET },
+      seven_day: { utilization: 15, resets_at: SEVEN_DAY_RESET },
+      seven_day_sonnet: null,
+      extra_usage: null,
+      meta: { plan: 'unknown', provider: 'ollama-cloud', tokenSource: 'ollama-cloud', displayMode: 'full' },
+      balance: null,
+    };
+
+    const out = render(data, {}, FIXED_NOW);
+
+    expect(out.tooltip).toContain('Ollama Cloud Usage');
+    expect(out.class).toBe('normal');
+  });
 });

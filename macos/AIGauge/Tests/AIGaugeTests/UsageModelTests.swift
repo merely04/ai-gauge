@@ -238,4 +238,52 @@ final class UsageModelTests: XCTestCase {
         XCTAssertNotNil(obj?["menubarText"])
         XCTAssertNotNil(obj?["tooltip"])
     }
+
+    func testIsValidTokenSourceAcceptsPi() {
+        XCTAssertTrue(UsageModel.isValidTokenSource("pi"))
+    }
+
+    func testProviderIndicatorPi() {
+        XCTAssertEqual(UsageModel.providerIndicator("pi"), "π")
+    }
+
+    func testPiTokenSourceTooltipShowsPiUsage() {
+        let model = UsageModel()
+        let meta = UsagePayload.Meta(
+            plan: nil, fetchedAt: nil, tokenSource: "pi", version: nil,
+            protocolVersion: 2, autoCheckUpdates: nil, displayMode: "full", provider: "anthropic"
+        )
+        let payload = UsagePayload(
+            five_hour: UsagePayload.Window(utilization: 45, resets_at: nil),
+            seven_day: UsagePayload.Window(utilization: 15, resets_at: nil),
+            seven_day_sonnet: nil, extra_usage: nil, balance: nil, meta: meta
+        )
+        model.update(from: payload)
+
+        XCTAssertTrue(model.tooltip.contains("Pi Usage"), "Expected tooltip to contain 'Pi Usage', got: \(model.tooltip)")
+    }
+
+    func testIsValidTokenSourceAcceptsOllamaCloud() {
+        XCTAssertTrue(UsageModel.isValidTokenSource("ollama-cloud"))
+    }
+
+    func testProviderIndicatorOllamaCloud() {
+        XCTAssertEqual(UsageModel.providerIndicator("ollama-cloud"), "🦙")
+    }
+
+    func testOllamaCloudTokenSourceTooltipShowsOllamaCloudUsage() {
+        let model = UsageModel()
+        let meta = UsagePayload.Meta(
+            plan: nil, fetchedAt: nil, tokenSource: "ollama-cloud", version: nil,
+            protocolVersion: 4, autoCheckUpdates: nil, displayMode: "full", provider: "ollama-cloud"
+        )
+        let payload = UsagePayload(
+            five_hour: UsagePayload.Window(utilization: 45, resets_at: nil),
+            seven_day: UsagePayload.Window(utilization: 15, resets_at: nil),
+            seven_day_sonnet: nil, extra_usage: nil, balance: nil, meta: meta
+        )
+        model.update(from: payload)
+
+        XCTAssertTrue(model.tooltip.contains("Ollama Cloud Usage"), "Expected tooltip to contain 'Ollama Cloud Usage', got: \(model.tooltip)")
+    }
 }

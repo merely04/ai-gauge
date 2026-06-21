@@ -12,7 +12,9 @@ struct MenuBarView: View {
         ("claude-code", "Claude Code"),
         ("opencode", "OpenCode"),
         ("codex", "Codex"),
-        ("github", "GitHub Copilot")
+        ("github", "GitHub Copilot"),
+        ("pi", "Pi"),
+        ("ollama-cloud", "Ollama Cloud")
     ]
     private let displayModes: [(value: String, display: String)] = [
         (value: "full", display: "Full"),

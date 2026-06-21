@@ -19,7 +19,7 @@ final class UsageModel: ObservableObject {
     static let SUPPORTED_PROTOCOL_VERSION = 4
 
     /// Keep in sync with `lib/config.js:TOKEN_SOURCE_PATTERN`.
-    nonisolated static let TOKEN_SOURCE_PATTERN = #"^(claude-code|opencode|codex|github|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$"#
+    nonisolated static let TOKEN_SOURCE_PATTERN = #"^(claude-code|opencode|codex|github|pi|ollama-cloud|claude-settings:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)$"#
 
     nonisolated static func isValidTokenSource(_ value: String) -> Bool {
         guard let regex = try? NSRegularExpression(pattern: TOKEN_SOURCE_PATTERN) else { return false }
@@ -499,7 +499,9 @@ final class UsageModel: ObservableObject {
         case "komilion": return "k"
         case "packy": return "p"
         case "codex": return "◆"
+        case "pi": return "π"
         case "unknown": return "?"
+        case "ollama-cloud": return "🦙"
         default: return ""
         }
     }
@@ -587,6 +589,8 @@ final class UsageModel: ObservableObject {
                 return "Claude (\(name)) Usage"
             }
             if tokenSource == "opencode" { return "OpenCode Usage" }
+            if tokenSource == "pi" { return "Pi Usage" }
+            if tokenSource == "ollama-cloud" { return "Ollama Cloud Usage" }
             return "Claude Code Usage"
         }
     }
@@ -600,6 +604,8 @@ final class UsageModel: ObservableObject {
         case "openrouter": return "OpenRouter"
         case "komilion": return "Komilion"
         case "packy": return "Packy"
+        case "pi": return "Pi"
+        case "ollama-cloud": return "Ollama Cloud"
         default: return provider.isEmpty ? "Unknown" : provider
         }
     }
