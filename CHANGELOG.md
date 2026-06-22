@@ -7,6 +7,8 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-06-21
+
 ### Added
 
 - **Pi coding agent token source** — new `tokenSource: "pi"` reads credentials from `~/.pi/agent/auth.json` (provider-keyed object) and `~/.pi/agent/settings.json` (for `defaultProvider`). Pi (pi.dev / badlogic/pi-mono) is a multi-provider coding agent analogous to OpenCode. Supported Pi provider blocks are mapped to existing adapters: `anthropic` → Anthropic OAuth, `openai-codex` → Codex, `github-copilot` → Copilot (`ghu_` token; GHES blocks with `enterpriseUrl` skipped), `openrouter` → OpenRouter, `zai` → Z.ai (`https://api.z.ai`). Unsupported blocks (e.g. `ollama-cloud`, `synthetic`) are skipped gracefully. Primary provider selection is hybrid: honor `settings.defaultProvider` when it maps to a supported block with usable credentials, else fixed priority `[anthropic, codex, zai, openrouter]` (`defaultModel` is not used for routing). Coverage uses the existing 3-slot broadcast: primary in `rateLimits`/`balance`, highest-priority non-primary non-copilot provider in `secondary`, Copilot quota in `copilot`. Expired OAuth tokens are reported and skipped — no refresh implemented. protocolVersion stays at 4. Auto-detect order updated to `opencode > pi > codex > claude-code`.
