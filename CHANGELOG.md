@@ -7,6 +7,18 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-07-07
+
+### Added
+
+- **Codex per-model rate-limit buckets** — the `/wham/usage` response carries an `additional_rate_limits[]` array of model-specific limit buckets (e.g. `GPT-5.5`, `Codex Spark`) that are enforced independently of the account-wide 5-hour/weekly windows. The daemon previously read only `rate_limit.primary_window`/`secondary_window` and dropped these, so a request could be rejected with "usage limit reached" while the menu still showed the account 5-hour window at ~1%. These buckets are now parsed (`per_model`: `{id, name, five_hour, seven_day, limit_reached}`) and rendered on both surfaces (macOS tooltip + waybar) as compact lines under the account windows — `· GPT-5.5:  100% · 84%w ⚠ limit reached (resets in …)`. The account-level `limit_reached`/`allowed` flags and `rate_limit_reached_type` are also honored, adding a `⚠ Account limit reached` marker. New broadcast fields are additive and codex-only — protocolVersion stays at 4.
+- **Stale-data indicator** — when the last **successful** fetch is older than 10 minutes (normal polling is 60s, so this only trips when fetches have been failing — e.g. network/VPN down), the tooltip now shows `⚠ Stale — last update Xm ago` on both macOS and waybar. Because the reset countdown is derived client-side from the absolute `resets_at` timestamp, stale data otherwise looks live; this makes staleness explicit rather than silently showing frozen numbers.
+
+### Fixed
+
+- **Codex JSONL fallback never matched real session data** — `parseCodexJsonlFallback` looked for `token_count` events with `rate_limits.primary_window` and a `utilization` field, but the real Codex CLI rollout (`TokenCountEvent` → `RateLimitSnapshot`) nests windows under `primary`/`secondary` with `used_percent` + `resets_at`. The fallback silently returned `null` on all production data (tests passed only against a fabricated fixture). Now accepts the real shape (and the legacy one defensively); `mapWindow` reads both `reset_at` and `resets_at`. Fixture recaptured from the real rollout format.
+- **`Refresh now` masked stale data as fresh** — on a failed fetch, `refreshNow` re-stamped `meta.fetchedAt` to the current time, so a manual refresh made an unchanged (stale) snapshot look freshly fetched. `fetchedAt` now always reflects the last **successful** fetch, which is what the new stale indicator keys off.
+
 ## [1.7.0] — 2026-06-21
 
 ### Added
