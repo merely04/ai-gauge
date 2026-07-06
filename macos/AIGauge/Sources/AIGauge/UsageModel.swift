@@ -155,6 +155,9 @@ final class UsageModel: ObservableObject {
             return
         }
         tooltipStr += "\n───────────────"
+        if let staleAge = Self.staleAgeLabel(payload.meta?.fetchedAt, now: now) {
+            tooltipStr += "\n⚠ Stale — last update \(staleAge) ago"
+        }
         tooltipStr += "\n5-hour:  \(fiveInt)%"
         if let fiveLong = Self.formatDurationLong(payload.five_hour?.resets_at, now: now), !fiveLong.isEmpty {
             tooltipStr += "  (resets in \(fiveLong))"
@@ -179,6 +182,12 @@ final class UsageModel: ObservableObject {
                 tooltipStr += "  (resets in \(crLong))"
             }
         }
+
+        tooltipStr += Self.codexLimitLines(
+            perModel: payload.per_model,
+            limitReached: payload.codex_limit_reached,
+            now: now
+        )
 
         if payload.extra_usage?.is_enabled == true {
             let extraPct = Int((payload.extra_usage?.utilization ?? 0).rounded())
@@ -216,6 +225,11 @@ final class UsageModel: ObservableObject {
                     tooltipStr += "  (resets in \(r))"
                 }
             }
+            tooltipStr += Self.codexLimitLines(
+                perModel: secondary.per_model,
+                limitReached: secondary.codex_limit_reached,
+                now: now
+            )
             if let bal = secondary.balance, let total = bal.total_cents {
                 let dollars = Double(total) / 100.0
                 tooltipStr += String(format: "\nBalance: $%.2f available", dollars)
@@ -702,6 +716,27 @@ final class UsageModel: ObservableObject {
         return "\(mins)m"
     }
 
+    /// Data older than this (last successful fetch) is flagged as stale. Normal
+    /// polling is 60s, so this only trips after fetches have been failing for a
+    /// while (e.g. network/VPN down) — exactly when a low % is untrustworthy.
+    static let staleThresholdSeconds: TimeInterval = 600
+
+    /// Returns a short elapsed-time label ("12m", "1h 5m") when the payload's
+    /// fetchedAt is older than the stale threshold, else nil.
+    fileprivate static func staleAgeLabel(_ fetchedAt: String?, now: Date = Date()) -> String? {
+        guard let iso = fetchedAt, let date = parseISODate(iso) else { return nil }
+        let age = now.timeIntervalSince(date)
+        if age < staleThresholdSeconds { return nil }
+
+        let mins = Int(age / 60)
+        if mins >= 60 {
+            let hours = mins / 60
+            let rem = mins % 60
+            return rem > 0 ? "\(hours)h \(rem)m" : "\(hours)h"
+        }
+        return "\(mins)m"
+    }
+
     fileprivate static func formatDurationLong(_ resetsAt: String?, now: Date = Date()) -> String? {
         guard let remaining = remainingSeconds(resetsAt, now: now) else { return nil }
         if remaining <= 0 { return "now" }
@@ -713,5 +748,40 @@ final class UsageModel: ObservableObject {
         if days > 0 { return "\(days)d \(hours)h \(mins)m" }
         if hours > 0 { return "\(hours)h \(mins)m" }
         return "\(mins)m"
+    }
+
+    /// Codex enforces per-model buckets (GPT-5.5 / Spark) separately from the
+    /// account-wide 5h/weekly windows. Render them so a low account % next to a
+    /// "usage limit reached" error is explained rather than misleading.
+    fileprivate static func codexLimitLines(
+        perModel: [UsagePayload.PerModelLimit]?,
+        limitReached: Bool?,
+        now: Date
+    ) -> String {
+        var out = ""
+        if limitReached == true {
+            out += "\n⚠ Account limit reached"
+        }
+
+        guard let models = perModel, !models.isEmpty else { return out }
+        for m in models {
+            let name = m.name ?? m.id ?? "Model"
+            var line = "\n· \(name):"
+            if let f = m.five_hour?.utilization {
+                line += "  \(Int(f.rounded()))%"
+            }
+            if let s = m.seven_day?.utilization {
+                line += " · \(Int(s.rounded()))%w"
+            }
+            if m.limit_reached == true {
+                line += " ⚠ limit reached"
+                let reset = m.five_hour?.resets_at ?? m.seven_day?.resets_at
+                if let r = formatDurationLong(reset, now: now), !r.isEmpty {
+                    line += " (resets in \(r))"
+                }
+            }
+            out += line
+        }
+        return out
     }
 }

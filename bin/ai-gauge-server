@@ -554,14 +554,11 @@ async function fetchAndHandleBroadcast({ force = false } = {}) {
 async function refreshNow() {
   const success = await fetchAndHandleBroadcast();
   if (!success && cachedData) {
-    cachedData = {
-      ...cachedData,
-      meta: {
-        ...cachedData.meta,
-        fetchedAt: new Date().toISOString(),
-      },
-    };
-    await writeUsageAtomic(cachedData);
+    // Re-broadcast the last good snapshot so a manual "Refresh now" still
+    // reaches clients, but do NOT bump meta.fetchedAt — that would mask stale
+    // data as fresh. fetchedAt must reflect the last SUCCESSFUL fetch so the
+    // UI can flag staleness (the countdown looks live regardless, since it is
+    // derived from the absolute resets_at timestamp client-side).
     broadcast(cachedData);
     await thresholdNotifier.check(cachedData);
     await copilotThresholdNotifier.check(cachedData);

@@ -263,6 +263,68 @@ final class UsageModelTests: XCTestCase {
         XCTAssertTrue(model.tooltip.contains("Pi Usage"), "Expected tooltip to contain 'Pi Usage', got: \(model.tooltip)")
     }
 
+    func testCodexSecondaryShowsPerModelLimitAndReachedMarker() {
+        // Reproduces the reported case: account-wide 5h reads 1% while a
+        // per-model bucket (GPT-5.5) is exhausted → menu must surface it.
+        let model = UsageModel()
+        let meta = UsagePayload.Meta(
+            plan: nil, fetchedAt: nil, tokenSource: "pi", version: nil,
+            protocolVersion: 2, autoCheckUpdates: nil, displayMode: "full", provider: "anthropic"
+        )
+        let secondary = UsagePayload.Secondary(
+            provider: "codex",
+            five_hour: UsagePayload.Window(utilization: 1, resets_at: nil),
+            seven_day: UsagePayload.Window(utilization: 16, resets_at: nil),
+            code_review: nil,
+            balance: nil,
+            per_model: [
+                UsagePayload.PerModelLimit(
+                    id: "gpt-5.5", name: "GPT-5.5",
+                    five_hour: UsagePayload.Window(utilization: 100, resets_at: nil),
+                    seven_day: UsagePayload.Window(utilization: 84, resets_at: nil),
+                    limit_reached: true
+                )
+            ],
+            codex_limit_reached: false
+        )
+        let payload = UsagePayload(
+            five_hour: UsagePayload.Window(utilization: 0, resets_at: nil),
+            seven_day: UsagePayload.Window(utilization: 98, resets_at: nil),
+            seven_day_sonnet: nil, extra_usage: nil, balance: nil,
+            secondary: secondary, meta: meta
+        )
+        model.update(from: payload)
+
+        XCTAssertTrue(model.tooltip.contains("GPT-5.5"), "Expected per-model line, got: \(model.tooltip)")
+        XCTAssertTrue(model.tooltip.contains("limit reached"), "Expected limit-reached marker, got: \(model.tooltip)")
+    }
+
+    func testStaleDataShowsMarkerWhenFetchOlderThanThreshold() {
+        let iso = ISO8601DateFormatter()
+        let fetched = iso.date(from: "2026-04-20T02:00:00Z")!
+        let fetchedAtStr = "2026-04-20T02:00:00Z"
+
+        let meta = UsagePayload.Meta(
+            plan: "max", fetchedAt: fetchedAtStr, tokenSource: "claude-code", version: nil,
+            protocolVersion: 4, autoCheckUpdates: nil, displayMode: "full", provider: "anthropic"
+        )
+        let payload = UsagePayload(
+            five_hour: UsagePayload.Window(utilization: 5, resets_at: nil),
+            seven_day: UsagePayload.Window(utilization: 20, resets_at: nil),
+            seven_day_sonnet: nil, extra_usage: nil, balance: nil, meta: meta
+        )
+
+        // 20 minutes later → past the 10m threshold → stale marker present.
+        let staleModel = UsageModel()
+        staleModel.update(from: payload, now: fetched.addingTimeInterval(20 * 60))
+        XCTAssertTrue(staleModel.tooltip.contains("Stale"), "Expected stale marker, got: \(staleModel.tooltip)")
+
+        // 30 seconds later → fresh → no marker.
+        let freshModel = UsageModel()
+        freshModel.update(from: payload, now: fetched.addingTimeInterval(30))
+        XCTAssertFalse(freshModel.tooltip.contains("Stale"), "Did not expect stale marker, got: \(freshModel.tooltip)")
+    }
+
     func testIsValidTokenSourceAcceptsOllamaCloud() {
         XCTAssertTrue(UsageModel.isValidTokenSource("ollama-cloud"))
     }

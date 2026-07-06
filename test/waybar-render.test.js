@@ -149,4 +149,68 @@ describe('waybar render: protocol v2 backward compatibility', () => {
     expect(out.tooltip).toContain('Ollama Cloud Usage');
     expect(out.class).toBe('normal');
   });
+
+  test('Case 9 — Codex secondary renders per-model buckets + limit-reached marker', () => {
+    const data = {
+      five_hour: { utilization: 0, resets_at: FIVE_HOUR_RESET },
+      seven_day: { utilization: 98, resets_at: SEVEN_DAY_RESET },
+      seven_day_sonnet: null,
+      extra_usage: null,
+      meta: { plan: 'max', provider: 'anthropic', tokenSource: 'pi', displayMode: 'full' },
+      secondary: {
+        provider: 'codex',
+        five_hour: { utilization: 1, resets_at: FIVE_HOUR_RESET },
+        seven_day: { utilization: 16, resets_at: SEVEN_DAY_RESET },
+        per_model: [
+          {
+            id: 'gpt-5.5',
+            name: 'GPT-5.5',
+            five_hour: { utilization: 100, resets_at: FIVE_HOUR_RESET },
+            seven_day: { utilization: 84, resets_at: SEVEN_DAY_RESET },
+            limit_reached: true,
+          },
+          {
+            id: 'codex-spark',
+            name: 'Codex Spark',
+            five_hour: { utilization: 30, resets_at: FIVE_HOUR_RESET },
+            seven_day: null,
+            limit_reached: false,
+          },
+        ],
+        codex_limit_reached: false,
+      },
+    };
+
+    const out = render(data, {}, FIXED_NOW);
+
+    // Account-wide 5h still reads low, but the per-model bucket is surfaced.
+    expect(out.tooltip).toContain('· GPT-5.5:  100% · 84%w ⚠ limit reached');
+    expect(out.tooltip).toContain('· Codex Spark:  30%');
+    expect(out.tooltip).not.toContain('Codex Spark:  30% ⚠');
+  });
+
+  test('Case 10 — stale fetchedAt shows marker; fresh does not', () => {
+    const base = {
+      five_hour: { utilization: 5, resets_at: FIVE_HOUR_RESET },
+      seven_day: { utilization: 20, resets_at: SEVEN_DAY_RESET },
+      seven_day_sonnet: null,
+      extra_usage: null,
+    };
+
+    // FIXED_NOW is 2026-04-20T02:00:00Z. 20 min earlier → past 10m threshold.
+    const stale = render(
+      { ...base, meta: { plan: 'max', displayMode: 'full', fetchedAt: '2026-04-20T01:40:00.000Z' } },
+      {},
+      FIXED_NOW
+    );
+    expect(stale.tooltip).toContain('⚠ Stale — last update 20m ago');
+
+    // 30s earlier → fresh → no marker.
+    const fresh = render(
+      { ...base, meta: { plan: 'max', displayMode: 'full', fetchedAt: '2026-04-20T01:59:30.000Z' } },
+      {},
+      FIXED_NOW
+    );
+    expect(fresh.tooltip).not.toContain('Stale');
+  });
 });

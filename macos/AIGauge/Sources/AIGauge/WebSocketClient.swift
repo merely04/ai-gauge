@@ -35,12 +35,22 @@ struct UsagePayload: Codable {
         let provider: String?
     }
 
+    struct PerModelLimit: Codable {
+        let id: String?
+        let name: String?
+        let five_hour: Window?
+        let seven_day: Window?
+        let limit_reached: Bool?
+    }
+
     struct Secondary: Codable {
         let provider: String?
         let five_hour: Window?
         let seven_day: Window?
         let code_review: Window?
         let balance: Balance?
+        let per_model: [PerModelLimit]?
+        let codex_limit_reached: Bool?
     }
 
     struct CopilotData: Codable {
@@ -65,6 +75,8 @@ struct UsagePayload: Codable {
     let balance: Balance?
     let secondary: Secondary?
     let copilot: CopilotData?
+    let per_model: [PerModelLimit]?
+    let codex_limit_reached: Bool?
     let meta: Meta?
 
     // Default-arg init so adding new optional top-level fields stays source-compatible.
@@ -77,6 +89,8 @@ struct UsagePayload: Codable {
         balance: Balance? = nil,
         secondary: Secondary? = nil,
         copilot: CopilotData? = nil,
+        per_model: [PerModelLimit]? = nil,
+        codex_limit_reached: Bool? = nil,
         meta: Meta? = nil
     ) {
         self.five_hour = five_hour
@@ -87,6 +101,8 @@ struct UsagePayload: Codable {
         self.balance = balance
         self.secondary = secondary
         self.copilot = copilot
+        self.per_model = per_model
+        self.codex_limit_reached = codex_limit_reached
         self.meta = meta
     }
 }

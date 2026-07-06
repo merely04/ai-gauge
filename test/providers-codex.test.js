@@ -8,6 +8,7 @@ import { parseCodexJsonlFallback } from '../lib/providers/codex.js';
 
 const fixturePlus = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/codex-wham-usage-plus.json'), 'utf8'));
 const fixturePro = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/codex-wham-usage-pro.json'), 'utf8'));
+const fixtureAdditional = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/providers/codex-wham-usage-additional.json'), 'utf8'));
 
 describe('Codex Provider Adapter', () => {
   const adapter = getProvider('codex');
@@ -83,6 +84,40 @@ describe('Codex Provider Adapter', () => {
     expect(result.error).toBeDefined();
   });
 
+  it('parseResponse maps additional_rate_limits into per_model (the "1% but limit reached" case)', () => {
+    const result = adapter.parseResponse(fixtureAdditional, 200);
+    expect(result.error).toBeUndefined();
+
+    // Account-wide 5h window reads low — this is what the menu used to show alone.
+    expect(result.rateLimits.five_hour.utilization).toBe(1);
+    expect(result.rateLimits.seven_day.utilization).toBe(16);
+    // Account bucket itself is not limit-reached...
+    expect(result.rateLimits.codex_limit_reached).toBe(false);
+    expect(result.rateLimits.codex_limit_reached_type).toBe('rate_limit_reached');
+
+    // ...but a per-model bucket is exhausted, which is why requests get rejected.
+    expect(Array.isArray(result.rateLimits.per_model)).toBe(true);
+    expect(result.rateLimits.per_model.length).toBe(2);
+
+    const gpt = result.rateLimits.per_model.find((m) => m.id === 'gpt-5.5');
+    expect(gpt.name).toBe('GPT-5.5');
+    expect(gpt.five_hour.utilization).toBe(100);
+    expect(gpt.seven_day.utilization).toBe(84);
+    expect(gpt.limit_reached).toBe(true);
+
+    const spark = result.rateLimits.per_model.find((m) => m.id === 'codex-spark');
+    expect(spark.name).toBe('Codex Spark');
+    expect(spark.five_hour.utilization).toBe(30);
+    expect(spark.seven_day).toBeNull();
+    expect(spark.limit_reached).toBe(false);
+  });
+
+  it('parseResponse per_model defaults to empty array when no additional_rate_limits', () => {
+    const result = adapter.parseResponse(fixturePlus, 200);
+    expect(result.rateLimits.per_model).toEqual([]);
+    expect(result.rateLimits.codex_limit_reached).toBe(false);
+  });
+
   it('all Anthropic-specific fields are null for codex', () => {
     const result = adapter.parseResponse(fixturePlus, 200);
     expect(result.rateLimits.seven_day_sonnet).toBeNull();
@@ -105,6 +140,9 @@ describe('parseCodexJsonlFallback', () => {
 
     const result = await parseCodexJsonlFallback({ codexHome: tmpBase });
     expect(result).not.toBeNull();
+    // Real Codex rollout uses `primary`/`secondary` + `used_percent` + `resets_at`.
+    expect(result.rateLimits.five_hour.utilization).toBe(55);
+    expect(result.rateLimits.seven_day.utilization).toBe(12);
     expect(typeof result.rateLimits.five_hour.resets_at).toBe('string');
     expect(result.rateLimits.five_hour.resets_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(result.balance).toBeNull();

@@ -1,0 +1,39 @@
+{
+  "user_id": "user-fake",
+  "account_id": "user-fake",
+  "plan_type": "plus",
+  "rate_limit": {
+    "allowed": true,
+    "limit_reached": false,
+    "primary_window": { "used_percent": 1, "limit_window_seconds": 18000, "reset_after_seconds": 11880, "reset_at": 1745539200 },
+    "secondary_window": { "used_percent": 16, "limit_window_seconds": 604800, "reset_after_seconds": 580380, "reset_at": 1745798400 }
+  },
+  "additional_rate_limits": [
+    {
+      "limit_name": "GPT-5.5",
+      "metered_feature": "gpt-5.5",
+      "rate_limit": {
+        "allowed": false,
+        "limit_reached": true,
+        "primary_window": { "used_percent": 100, "reset_after_seconds": 3600, "reset_at": 1745539200 },
+        "secondary_window": { "used_percent": 84, "reset_after_seconds": 86400, "reset_at": 1745798400 }
+      }
+    },
+    {
+      "limit_name": "Codex Spark",
+      "metered_feature": "codex-spark",
+      "rate_limit": {
+        "allowed": true,
+        "limit_reached": false,
+        "primary_window": { "used_percent": 30, "reset_after_seconds": 7200, "reset_at": 1745539200 },
+        "secondary_window": null
+      }
+    }
+  ],
+  "rate_limit_reached_type": { "type": "rate_limit_reached" },
+  "credits": {
+    "has_credits": false,
+    "balance": "0",
+    "currency": "USD"
+  }
+}
